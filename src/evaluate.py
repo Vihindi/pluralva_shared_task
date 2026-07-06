@@ -61,11 +61,17 @@ class Scorer:
         self.batch_size = batch_size
 
     def _prompt_ids(self, messages):
+        kwargs = {"add_generation_prompt": True, "tokenize": True, "return_tensors": None}
         try:
-            return self.tok.apply_chat_template(
-                messages, add_generation_prompt=True, enable_thinking=False)
+            ids = self.tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
         except TypeError:
-            return self.tok.apply_chat_template(messages, add_generation_prompt=True)
+            ids = self.tok.apply_chat_template(messages, **kwargs)
+        # transformers ≥4.51 may return BatchEncoding even without return_tensors
+        if hasattr(ids, "input_ids"):
+            ids = ids["input_ids"]
+        if ids and isinstance(ids[0], list):
+            ids = ids[0]
+        return list(ids)
 
     @torch.no_grad()
     def score_candidates(self, messages, candidates):
