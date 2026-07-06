@@ -19,7 +19,7 @@ Modes
   predict : emit submission-format predictions.jsonl from a test JSONL in the
             same schema as the dev files (Gold_Answer may be absent)
 
-  python src/evaluate.py eval --model Qwen/Qwen3-8B --fold 0
+  python src/evaluate.py eval --model Qwen/Qwen3-8B --fold 0 --load_4bit
   python src/evaluate.py eval --model Qwen/Qwen3-8B --adapter runs/joint_fold0 --fold 0
   python src/evaluate.py predict --model Qwen/Qwen3-8B --adapter runs/joint_full \
       --test_files test/chinese_test.jsonl test/indonesian_test.jsonl \
@@ -77,27 +77,22 @@ class Scorer:
     def score_candidates(self, messages, candidates):
         """Return log P(candidate tokens | prompt) for each candidate string."""
         prompt_ids = self._prompt_ids(messages)
-        rows, spans = [], []
+        device = self.model.device
+        out = []
         for cand in candidates:
             cand_ids = self.tok.encode(cand, add_special_tokens=False)
-            rows.append(prompt_ids + cand_ids)
-            spans.append((len(prompt_ids), len(prompt_ids) + len(cand_ids)))
-        maxlen = max(len(r) for r in rows)
-        pad = self.tok.pad_token_id or self.tok.eos_token_id
-        input_ids = torch.full((len(rows), maxlen), pad, dtype=torch.long)
-        attn = torch.zeros((len(rows), maxlen), dtype=torch.long)
-        for i, r in enumerate(rows):
-            input_ids[i, : len(r)] = torch.tensor(r)
-            attn[i, : len(r)] = 1
-        input_ids = input_ids.to(self.model.device)
-        attn = attn.to(self.model.device)
-        logits = self.model(input_ids=input_ids, attention_mask=attn).logits
-        logprobs = torch.log_softmax(logits.float(), dim=-1)
-        out = []
-        for i, (s, e) in enumerate(spans):
-            # token at position t is predicted by logits at t-1
-            lp = sum(logprobs[i, t - 1, input_ids[i, t]].item() for t in range(s, e))
+            ids = prompt_ids + cand_ids
+            s, e = len(prompt_ids), len(ids)
+            input_ids = torch.tensor([ids], dtype=torch.long, device=device)
+            attn = torch.ones_like(input_ids)
+            logits = self.model(input_ids=input_ids, attention_mask=attn).logits
+            lp = 0.0
+            for t in range(s, e):
+                # one vocab row at a time — avoids O(batch × seq × vocab) fp32 tensor
+                tok_lp = torch.log_softmax(logits[0, t - 1], dim=-1)
+                lp += tok_lp[input_ids[0, t]].item()
             out.append(lp)
+            del logits, input_ids, attn
         return out
 
 
