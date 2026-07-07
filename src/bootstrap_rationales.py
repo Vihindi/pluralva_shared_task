@@ -67,17 +67,20 @@ class Generator:
     def chat(self, messages, n=1, temperature=0.8):
         kwargs = {"add_generation_prompt": True, "return_tensors": "pt"}
         try:  # Qwen3: no thinking blocks in bootstrapped rationales
-            ids = self.tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
+            encoded = self.tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
         except TypeError:
-            ids = self.tok.apply_chat_template(messages, **kwargs)
-        ids = ids.to(self.model.device)
+            encoded = self.tok.apply_chat_template(messages, **kwargs)
+        # transformers ≥4.51 returns BatchEncoding, not a raw tensor
+        input_ids = encoded["input_ids"] if hasattr(encoded, "input_ids") else encoded
+        input_ids = input_ids.to(self.model.device)
         with torch.no_grad():
             out = self.model.generate(
-                ids, do_sample=temperature > 0, temperature=temperature,
+                input_ids, do_sample=temperature > 0, temperature=temperature,
                 top_p=0.95, num_return_sequences=n,
                 max_new_tokens=self.max_new_tokens,
                 pad_token_id=self.tok.eos_token_id)
-        return [self.tok.decode(seq[ids.shape[1]:], skip_special_tokens=True)
+        prompt_len = input_ids.shape[1]
+        return [self.tok.decode(seq[prompt_len:], skip_special_tokens=True)
                 for seq in out]
 
 
