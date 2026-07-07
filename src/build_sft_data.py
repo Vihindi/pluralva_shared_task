@@ -9,6 +9,8 @@ Per methodology §2.4:
     vote (5 per item). Under per-example cross-entropy this is exactly equivalent
     in expectation to training the letter distribution against the empirical
     5-vote distribution with soft cross-entropy — no custom loss needed.
+    To avoid rationale/label mismatch, rationales are only used for consensus
+    votes on the canonical option order.
   * Sri Lankan binary decomposition: each item becomes two independent Yes/No
     judgments (statement A, statement B), removing the A-position bias and the
     {A:52%} class skew from the learning problem.
@@ -107,9 +109,15 @@ def build_indonesian(recs, rationales, n_perms):
     for rec in recs:
         for shift in CYCLIC_SHIFTS[:n_perms]:
             p, _ = permute_record(rec, shift)
-            key = rec["uid"] if shift == 0 else None
             # vote-expansion: one example per annotator vote == soft-label CE
             for vote in p["votes"]:
+                key = None
+                if shift == 0 and vote in p["consensus"]:
+                    # Safe default: never pair a rationale with a minority label.
+                    # If vote-specific rationale keys exist (uid_A, uid_B, ...),
+                    # prefer them; otherwise fall back to uid-level rationale.
+                    vote_key = f"{rec['uid']}_{vote}"
+                    key = vote_key if vote_key in rationales else rec["uid"]
                 out.append(make_example(p, vote, rationales, key))
     return out
 
