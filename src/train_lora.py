@@ -34,7 +34,13 @@ def load_examples(paths):
         with open(p, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
+<<<<<<< Updated upstream
                     rows.append({"messages": json.loads(line)["messages"]})
+=======
+                    r = json.loads(line)
+                    rows.append({"messages": r["messages"],
+                                 "fold": r.get("meta", {}).get("fold", -1)})
+>>>>>>> Stashed changes
     return rows
 
 
@@ -52,12 +58,48 @@ def main():
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--max_len", type=int, default=1536)
     ap.add_argument("--load_4bit", action="store_true", help="QLoRA (16-24GB GPUs)")
+    ap.add_argument("--eval_fold", type=int, default=None,
+                    help="hold out this CV fold as the validation set for loss "
+                         "curves; pass the *_train_full.jsonl files with this")
+    ap.add_argument("--eval_steps", type=int, default=25)
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
     rows = load_examples(args.train_files)
+<<<<<<< Updated upstream
     print(f"{len(rows)} training examples from {len(args.train_files)} file(s)")
     ds = Dataset.from_list(rows).shuffle(seed=args.seed)
+=======
+    eval_rows = []
+    if args.eval_fold is not None:
+        eval_rows = [r for r in rows if r["fold"] == args.eval_fold]
+        rows = [r for r in rows if r["fold"] != args.eval_fold]
+        if not eval_rows:
+            raise SystemExit(
+                f"--eval_fold {args.eval_fold} matched no examples. Pass the "
+                f"*_train_full.jsonl files (fold-filtered *_train_fold{args.eval_fold} "
+                f"files already exclude that fold).")
+
+    def encode_all(rws):
+        feats, skipped = [], 0
+        for r in rws:
+            enc = encode_example(tok, r["messages"], args.max_len)
+            if enc is None:
+                skipped += 1
+            else:
+                feats.append(enc)
+        return feats, skipped
+
+    feats, skipped = encode_all(rows)
+    print(f"{len(feats)} training examples from {len(args.train_files)} file(s)"
+          f" ({skipped} skipped as longer than {args.max_len} tokens)")
+    ds = Dataset.from_list(feats).shuffle(seed=args.seed)
+    eval_ds = None
+    if eval_rows:
+        eval_feats, _ = encode_all(eval_rows)
+        eval_ds = Dataset.from_list(eval_feats)
+        print(f"{len(eval_feats)} validation examples (held-out fold {args.eval_fold})")
+>>>>>>> Stashed changes
 
     tok = AutoTokenizer.from_pretrained(args.base_model)
     model_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
@@ -93,13 +135,33 @@ def main():
         save_strategy="epoch",
         seed=args.seed,
         report_to="none",
+<<<<<<< Updated upstream
     )
 
     trainer = SFTTrainer(model=model, args=sft_config, train_dataset=ds,
                          processing_class=tok, peft_config=peft_config)
     trainer.train()
     trainer.save_model(args.output_dir)
+=======
+        remove_unused_columns=False,  # keep pre-tokenized columns with PeftModel
+        eval_strategy="steps" if eval_ds is not None else "no",
+        eval_steps=args.eval_steps,
+        per_device_eval_batch_size=max(2, args.batch_size),
+    )
+
+    trainer = Trainer(model=model, args=train_args, train_dataset=ds,
+                      eval_dataset=eval_ds,
+                      data_collator=PadCollator(tok.pad_token_id))
+    trainer.train()
+    trainer.save_model(args.output_dir)
+    tok.save_pretrained(args.output_dir)
+    # full loss history for plot_training.py
+    hist_path = Path(args.output_dir) / "log_history.json"
+    with open(hist_path, "w", encoding="utf-8") as f:
+        json.dump(trainer.state.log_history, f, indent=2)
+>>>>>>> Stashed changes
     print(f"adapter saved to {args.output_dir}")
+    print(f"loss history -> {hist_path}")
 
 
 if __name__ == "__main__":
