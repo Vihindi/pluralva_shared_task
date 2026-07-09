@@ -1,16 +1,27 @@
 """Stage-1 LoRA SFT on the chat-format files from build_sft_data.py.
 
 Loss is computed on assistant tokens only (the "Answer: X" line and, when
-present, the bootstrapped rationale) — the standard letter-likelihood setup for
-MCQ fine-tuning. Per-country adapter: pass one file. Joint multi-country
-adapter: pass several files (country conditioning lives in the system prompts).
+present, the bootstrapped rationale). Instead of trl's assistant_only_loss —
+which requires {% generation %} markers in the chat template and therefore
+fails on Llama-3.1 — examples are pre-tokenized here: the prompt is rendered
+with the model's own chat template (add_generation_prompt=True), the assistant
+target + EOS is appended, and prompt positions are masked to -100 in labels.
+This works with any template and matches evaluate.py's scoring layout exactly
+(template prompt + "Answer: X" continuation).
+
+Per-country adapter: pass one file. Joint multi-country adapter: pass several
+files (country conditioning lives in the system prompts).
 
 Runs on a single 16-24GB GPU with --load_4bit (QLoRA), or 40GB+ in bf16.
-  pip install torch transformers peft trl datasets accelerate bitsandbytes
+  pip install torch transformers peft datasets accelerate bitsandbytes
   # per-country adapter, CV fold 0:
   python src/train_lora.py --train_files sft_data/zh_train_fold0.jsonl \
       --output_dir runs/zh_fold0
-  # joint adapter on everything (final submission model):
+  # joint fold-0 adapter with validation-loss tracking:
+  python src/train_lora.py --train_files sft_data/zh_train_full.jsonl \
+      sft_data/id_train_full.jsonl sft_data/si_train_full.jsonl \
+      --eval_fold 0 --output_dir runs/joint_fold0
+  # final submission model (all dev data, no holdout):
   python src/train_lora.py --train_files sft_data/zh_train_full.jsonl \
       sft_data/id_train_full.jsonl sft_data/si_train_full.jsonl \
       --output_dir runs/joint_full
@@ -21,9 +32,9 @@ from pathlib import Path
 
 import torch
 from datasets import Dataset
-from peft import LoraConfig
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from trl import SFTConfig, SFTTrainer
+from peft import LoraConfig, get_peft_model
+from transformers import (AutoModelForCausalLM, AutoTokenizer, Trainer,
+                          TrainingArguments)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -34,14 +45,54 @@ def load_examples(paths):
         with open(p, encoding="utf-8") as f:
             for line in f:
                 if line.strip():
-<<<<<<< Updated upstream
-                    rows.append({"messages": json.loads(line)["messages"]})
-=======
                     r = json.loads(line)
                     rows.append({"messages": r["messages"],
                                  "fold": r.get("meta", {}).get("fold", -1)})
->>>>>>> Stashed changes
     return rows
+
+
+def template_ids(tok, messages):
+    """Prompt token ids via the model's chat template (thinking disabled when
+    the template supports it), normalized to a flat list of ints."""
+    kwargs = {"add_generation_prompt": True, "tokenize": True}
+    try:
+        ids = tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
+    except TypeError:
+        ids = tok.apply_chat_template(messages, **kwargs)
+    if hasattr(ids, "input_ids"):
+        ids = ids["input_ids"]
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    return list(ids)
+
+
+def encode_example(tok, messages, max_len):
+    """-> {input_ids, labels} with prompt masked, or None if too long."""
+    assert messages[-1]["role"] == "assistant", "last message must be assistant"
+    prompt_ids = template_ids(tok, messages[:-1])
+    target_ids = tok.encode(messages[-1]["content"], add_special_tokens=False)
+    target_ids.append(tok.eos_token_id)
+    input_ids = prompt_ids + target_ids
+    if len(input_ids) > max_len:
+        return None
+    labels = [-100] * len(prompt_ids) + target_ids
+    return {"input_ids": input_ids, "labels": labels}
+
+
+class PadCollator:
+    def __init__(self, pad_id):
+        self.pad_id = pad_id
+
+    def __call__(self, feats):
+        maxlen = max(len(f["input_ids"]) for f in feats)
+        batch = {"input_ids": [], "labels": [], "attention_mask": []}
+        for f in feats:
+            n = len(f["input_ids"])
+            pad = maxlen - n
+            batch["input_ids"].append(list(f["input_ids"]) + [self.pad_id] * pad)
+            batch["labels"].append(list(f["labels"]) + [-100] * pad)
+            batch["attention_mask"].append([1] * n + [0] * pad)
+        return {k: torch.tensor(v, dtype=torch.long) for k, v in batch.items()}
 
 
 def main():
@@ -65,11 +116,11 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
+    tok = AutoTokenizer.from_pretrained(args.base_model)
+    if tok.pad_token_id is None:
+        tok.pad_token = tok.eos_token
+
     rows = load_examples(args.train_files)
-<<<<<<< Updated upstream
-    print(f"{len(rows)} training examples from {len(args.train_files)} file(s)")
-    ds = Dataset.from_list(rows).shuffle(seed=args.seed)
-=======
     eval_rows = []
     if args.eval_fold is not None:
         eval_rows = [r for r in rows if r["fold"] == args.eval_fold]
@@ -99,9 +150,7 @@ def main():
         eval_feats, _ = encode_all(eval_rows)
         eval_ds = Dataset.from_list(eval_feats)
         print(f"{len(eval_feats)} validation examples (held-out fold {args.eval_fold})")
->>>>>>> Stashed changes
 
-    tok = AutoTokenizer.from_pretrained(args.base_model)
     model_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
                     "attn_implementation": "sdpa"}
     if args.load_4bit:
@@ -113,13 +162,22 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(args.base_model, **model_kwargs)
     model.config.use_cache = False
 
+    if args.load_4bit:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=True)
+    else:
+        model.enable_input_require_grads()  # needed with gradient checkpointing
+
     peft_config = LoraConfig(
         r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
         task_type="CAUSAL_LM")
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
 
-    sft_config = SFTConfig(
+    train_args = TrainingArguments(
         output_dir=args.output_dir,
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
@@ -129,22 +187,12 @@ def main():
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
         bf16=True,
-        max_length=args.max_len,
-        assistant_only_loss=True,   # loss on assistant tokens only
         logging_steps=10,
         save_strategy="epoch",
         seed=args.seed,
         report_to="none",
-<<<<<<< Updated upstream
-    )
-
-    trainer = SFTTrainer(model=model, args=sft_config, train_dataset=ds,
-                         processing_class=tok, peft_config=peft_config)
-    trainer.train()
-    trainer.save_model(args.output_dir)
-=======
         remove_unused_columns=False,  # keep pre-tokenized columns with PeftModel
-        eval_strategy="steps" if eval_ds is not None else "no",
+        eval_strategy="steps" if eval_rows else "no",
         eval_steps=args.eval_steps,
         per_device_eval_batch_size=max(2, args.batch_size),
     )
@@ -159,7 +207,6 @@ def main():
     hist_path = Path(args.output_dir) / "log_history.json"
     with open(hist_path, "w", encoding="utf-8") as f:
         json.dump(trainer.state.log_history, f, indent=2)
->>>>>>> Stashed changes
     print(f"adapter saved to {args.output_dir}")
     print(f"loss history -> {hist_path}")
 
