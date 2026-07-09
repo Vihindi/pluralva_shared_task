@@ -43,8 +43,24 @@ ROOT = Path(__file__).resolve().parent.parent
 LETTERS4 = ["A", "B", "C", "D"]
 
 
+def resolve_base_model(model_name, adapter):
+    """A LoRA adapter only loads onto the exact base it was trained on; if the
+    adapter records a different base than --model, trust the adapter."""
+    if adapter:
+        cfg_path = Path(adapter) / "adapter_config.json"
+        if cfg_path.exists():
+            recorded = json.load(open(cfg_path, encoding="utf-8")).get(
+                "base_model_name_or_path")
+            if recorded and recorded != model_name:
+                print(f"WARNING: adapter was trained on {recorded!r}, not "
+                      f"{model_name!r} — loading {recorded!r} instead.")
+                return recorded
+    return model_name
+
+
 class Scorer:
     def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8):
+        model_name = resolve_base_model(model_name, adapter)
         self.tok = AutoTokenizer.from_pretrained(model_name)
         kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
         if load_4bit:
@@ -207,6 +223,8 @@ def run_predict(args, scorer):
         if p.exists():
             dev_priors[ds] = compute_prior(load_jsonl(p))
     out = open(args.out, "w", encoding="utf-8")
+    # raw distributions for ensemble.py / tune_calibration.py (Stage 3)
+    details = open(str(args.out) + ".details.jsonl", "w", encoding="utf-8")
     for path in args.test_files:
         name = Path(path).name.lower()
         ds = ("chinese" if "chin" in name else
@@ -217,18 +235,25 @@ def run_predict(args, scorer):
         print(f"[{ds}] predicting {len(recs)} items from {path}")
         for i, rec in enumerate(recs):
             if ds == "sri_lankan":
-                pred, _, _ = score_si(scorer, rec, threshold=args.si_threshold)
+                pred, pa, pb = score_si(scorer, rec, threshold=args.si_threshold)
+                extra = {"p_yes_A": pa, "p_yes_B": pb}
             else:
                 probs = score_mcq(scorer, rec, n_perms=args.n_perms,
                                   prior=dev_priors.get(ds), prior_tau=args.prior_tau)
                 pred = max(probs, key=probs.get)
+                extra = {"probs": probs}
             out.write(json.dumps({"dataset": args.dataset_names[ds],
                                   "id": rec["uid"], "LLM_Output": pred},
                                  ensure_ascii=False) + "\n")
+            details.write(json.dumps({"uid": rec["uid"], "dataset": ds,
+                                      "pred": pred, **extra},
+                                     ensure_ascii=False) + "\n")
             if (i + 1) % 50 == 0:
                 print(f"  {i+1}/{len(recs)}")
     out.close()
+    details.close()
     print(f"predictions -> {args.out}")
+    print(f"raw distributions -> {args.out}.details.jsonl (for ensemble.py)")
 
 
 def main():
