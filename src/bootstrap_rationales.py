@@ -18,15 +18,25 @@ Requires GPU (bf16 ~16GB for an 8B model; use --load_4bit on 16GB cards).
 import argparse
 import json
 import re
+import zlib
 from pathlib import Path
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from prompts import build_messages
+from build_sft_data import permute_record
 
 ROOT = Path(__file__).resolve().parent.parent
 ANSWER_RE = re.compile(r"Answer:\s*([ABCD]|Yes|No)", re.IGNORECASE)
+
+
+def uid_shift(uid):
+    """Deterministic per-item cyclic option shift (0-3), stable across runs
+    and processes (crc32, NOT Python's randomized hash()). Spreads the gold
+    answer uniformly over positions A-D during rationale generation, so the
+    base model's position bias can't skew which items get STaR rationales."""
+    return zlib.crc32(uid.encode("utf-8")) % 4
 
 
 def load_jsonl(path):
@@ -117,6 +127,12 @@ def main():
                     default=["chinese", "indonesian", "sri_lankan"])
     ap.add_argument("--k", type=int, default=8, help="CoT samples per target")
     ap.add_argument("--temperature", type=float, default=0.8)
+    ap.add_argument("--shuffle_options", action="store_true",
+                    help="deterministically shuffle ZH/ID options per item "
+                         "(gold/votes remapped) so gold positions are balanced "
+                         "during rationale generation; the applied shift is "
+                         "recorded so build_sft_data attaches each rationale "
+                         "to the matching option order")
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--limit", type=int, default=0, help="debug: cap items per dataset")
     args = ap.parse_args()
@@ -137,6 +153,12 @@ def main():
             if args.limit:
                 recs = recs[: args.limit]
             for i, rec in enumerate(recs):
+                # sri_lankan is untouched: its binary decomposition shows one
+                # statement at a time, so there is no option order to shuffle
+                shift = 0
+                if args.shuffle_options and ds != "sri_lankan":
+                    shift = uid_shift(rec["uid"])
+                    rec, _ = permute_record(rec, shift)
                 for key, stmt, is_correct, gold_text in targets_for(rec):
                     if key in done:
                         continue
@@ -157,6 +179,7 @@ def main():
                     fout.write(json.dumps({
                         "key": key, "uid": rec["uid"], "dataset": ds,
                         "rationale": rationale, "answer": answer, "source": source,
+                        "shift": shift,
                     }, ensure_ascii=False) + "\n")
                     fout.flush()
                 if (i + 1) % 20 == 0:

@@ -78,9 +78,7 @@ def make_example(rec, target_letter, rationales, rationale_key, si_statement=Non
     messages = build_messages(rec, mode="direct", si_statement=si_statement)
     rat = rationales.get(rationale_key)
     if rat:
-        # rationale was written for the canonical option order; only reuse it
-        # verbatim for the identity permutation (letters must match the prompt)
-        assistant = f"{rat}\nAnswer: {target_letter}"
+        assistant = f"{rat['text']}\nAnswer: {target_letter}"
         msgs = build_messages(rec, mode="cot", si_statement=si_statement)
         messages = msgs
     else:
@@ -92,12 +90,22 @@ def make_example(rec, target_letter, rationales, rationale_key, si_statement=Non
     }
 
 
+def rationale_key_for(rationales, uid, shift):
+    """A rationale's letter references only make sense under the option order
+    it was generated with — attach it to the permutation copy whose shift
+    matches the one recorded by bootstrap_rationales.py (0 for old files)."""
+    rat = rationales.get(uid)
+    if rat and rat["shift"] == shift:
+        return uid
+    return None
+
+
 def build_chinese(recs, rationales, n_perms):
     out = []
     for rec in recs:
         for shift in CYCLIC_SHIFTS[:n_perms]:
             p, _ = permute_record(rec, shift)
-            key = rec["uid"] if shift == 0 else None  # rationale only on canonical order
+            key = rationale_key_for(rationales, rec["uid"], shift)
             out.append(make_example(p, p["gold"], rationales, key))
     return out
 
@@ -107,10 +115,13 @@ def build_indonesian(recs, rationales, n_perms):
     for rec in recs:
         for shift in CYCLIC_SHIFTS[:n_perms]:
             p, _ = permute_record(rec, shift)
-            key = rec["uid"] if shift == 0 else None
+            key = rationale_key_for(rationales, rec["uid"], shift)
             # vote-expansion: one example per annotator vote == soft-label CE
             for vote in p["votes"]:
-                out.append(make_example(p, vote, rationales, key))
+                # a rationale argues for one answer; never pair it with a
+                # different vote's target letter
+                vote_key = key if (key and rationales[key]["answer"] == vote) else None
+                out.append(make_example(p, vote, rationales, vote_key))
     return out
 
 
@@ -138,7 +149,9 @@ def main():
     rationales = {}
     if args.rationales:
         for r in load_jsonl(Path(args.rationales)):
-            rationales[r["key"]] = r["rationale"]
+            rationales[r["key"]] = {"text": r["rationale"],
+                                    "answer": r.get("answer"),
+                                    "shift": r.get("shift", 0)}
         print(f"loaded {len(rationales)} rationales")
 
     builders = {
