@@ -28,6 +28,21 @@ from trl import DPOConfig, DPOTrainer
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def resolve_base_model(model_name, adapter):
+    """A LoRA adapter only loads onto the exact base it was trained on; if the
+    adapter records a different base than --base_model, trust the adapter."""
+    if adapter:
+        cfg_path = Path(adapter) / "adapter_config.json"
+        if cfg_path.exists():
+            recorded = json.load(open(cfg_path, encoding="utf-8")).get(
+                "base_model_name_or_path")
+            if recorded and recorded != model_name:
+                print(f"WARNING: adapter was trained on {recorded!r}, not "
+                      f"{model_name!r} — loading {recorded!r} instead.")
+                return recorded
+    return model_name
+
+
 def load_pairs(paths):
     rows = []
     for p in paths:
@@ -65,7 +80,6 @@ def main():
     args = ap.parse_args()
 
     if args.sft_adapter:
-        from evaluate import resolve_base_model
         args.base_model = resolve_base_model(args.base_model, args.sft_adapter)
 
     rows = load_pairs(args.train_files)

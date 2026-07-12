@@ -34,6 +34,21 @@ ROOT = Path(__file__).resolve().parent.parent
 LETTERS4 = ["A", "B", "C", "D"]
 
 
+def resolve_base_model(model_name, adapter):
+    """A LoRA adapter only loads onto the exact base it was trained on; if the
+    adapter records a different base than --base_model, trust the adapter."""
+    if adapter:
+        cfg_path = Path(adapter) / "adapter_config.json"
+        if cfg_path.exists():
+            recorded = json.load(open(cfg_path, encoding="utf-8")).get(
+                "base_model_name_or_path")
+            if recorded and recorded != model_name:
+                print(f"WARNING: adapter was trained on {recorded!r}, not "
+                      f"{model_name!r} — loading {recorded!r} instead.")
+                return recorded
+    return model_name
+
+
 def build_rows(processed_dir, datasets, fold):
     """One prompt row per training target; gold_info drives the reward."""
     rows = []
@@ -121,7 +136,6 @@ def main():
     args = ap.parse_args()
 
     if args.sft_adapter:
-        from evaluate import resolve_base_model
         args.base_model = resolve_base_model(args.base_model, args.sft_adapter)
 
     rows = build_rows(args.processed_dir, args.datasets, args.fold)
