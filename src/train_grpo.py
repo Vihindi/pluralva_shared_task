@@ -110,6 +110,13 @@ def main():
     ap.add_argument("--grad_accum", type=int, default=4)
     ap.add_argument("--max_completion", type=int, default=400)
     ap.add_argument("--load_4bit", action="store_true")
+    ap.add_argument("--save_steps", type=int, default=0,
+                    help="save a checkpoint every N optimizer steps (0 = only at "
+                         "epoch end). Use e.g. 20 on Colab to survive disconnects.")
+    ap.add_argument("--save_total_limit", type=int, default=2,
+                    help="keep only the newest N step-checkpoints (saves disk)")
+    ap.add_argument("--resume", action="store_true",
+                    help="resume from the latest checkpoint-* in --output_dir")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -156,7 +163,9 @@ def main():
         bf16=True,
         temperature=0.9,
         logging_steps=5,
-        save_strategy="epoch",
+        save_strategy="steps" if args.save_steps > 0 else "epoch",
+        save_steps=args.save_steps if args.save_steps > 0 else 500,
+        save_total_limit=args.save_total_limit,
         seed=args.seed,
         report_to="none",
     )
@@ -164,7 +173,19 @@ def main():
     trainer = GRPOTrainer(model=model, reward_funcs=make_reward_fn(),
                           args=grpo_config, train_dataset=ds,
                           processing_class=tok, peft_config=peft_config)
-    trainer.train()
+
+    # resume from the newest checkpoint-* in output_dir if asked and one exists
+    resume_ckpt = None
+    if args.resume:
+        ckpts = sorted(Path(args.output_dir).glob("checkpoint-*"),
+                       key=lambda p: int(p.name.split("-")[-1]))
+        if ckpts:
+            resume_ckpt = str(ckpts[-1])
+            print(f"resuming from {resume_ckpt}")
+        else:
+            print(f"--resume set but no checkpoint-* in {args.output_dir}; "
+                  f"starting fresh")
+    trainer.train(resume_from_checkpoint=resume_ckpt)
     trainer.save_model(args.output_dir)
     print(f"GRPO adapter saved to {args.output_dir}")
 

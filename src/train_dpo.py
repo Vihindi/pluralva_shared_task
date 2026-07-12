@@ -54,6 +54,13 @@ def main():
     ap.add_argument("--grad_accum", type=int, default=16)
     ap.add_argument("--max_len", type=int, default=1536)
     ap.add_argument("--load_4bit", action="store_true")
+    ap.add_argument("--save_steps", type=int, default=0,
+                    help="save a checkpoint every N optimizer steps (0 = only at "
+                         "epoch end). Use e.g. 50 on Colab to survive disconnects.")
+    ap.add_argument("--save_total_limit", type=int, default=2,
+                    help="keep only the newest N step-checkpoints (saves disk)")
+    ap.add_argument("--resume", action="store_true",
+                    help="resume from the latest checkpoint-* in --output_dir")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -101,7 +108,9 @@ def main():
         max_length=args.max_len,
         max_prompt_length=args.max_len - 16,
         logging_steps=10,
-        save_strategy="epoch",
+        save_strategy="steps" if args.save_steps > 0 else "epoch",
+        save_steps=args.save_steps if args.save_steps > 0 else 500,
+        save_total_limit=args.save_total_limit,
         seed=args.seed,
         report_to="none",
     )
@@ -109,7 +118,19 @@ def main():
     trainer = DPOTrainer(model=model, ref_model=None, args=dpo_config,
                          train_dataset=ds, processing_class=tok,
                          peft_config=peft_config)
-    trainer.train()
+
+    # resume from the newest checkpoint-* in output_dir if asked and one exists
+    resume_ckpt = None
+    if args.resume:
+        ckpts = sorted(Path(args.output_dir).glob("checkpoint-*"),
+                       key=lambda p: int(p.name.split("-")[-1]))
+        if ckpts:
+            resume_ckpt = str(ckpts[-1])
+            print(f"resuming from {resume_ckpt}")
+        else:
+            print(f"--resume set but no checkpoint-* in {args.output_dir}; "
+                  f"starting fresh")
+    trainer.train(resume_from_checkpoint=resume_ckpt)
     trainer.save_model(args.output_dir)
     print(f"DPO adapter saved to {args.output_dir}")
 

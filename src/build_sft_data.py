@@ -100,10 +100,23 @@ def rationale_key_for(rationales, uid, shift):
     return None
 
 
+def shifts_for(rationales, uid, n_perms):
+    """Which cyclic option orderings to emit for this item.
+
+    n_perms > 1 : the first n_perms cyclic shifts (permutation augmentation).
+    n_perms == 1: a single copy — but at the shift the item's rationale was
+                  generated under (so it still attaches and stays balanced);
+                  falls back to 0 when no rationale / old files."""
+    if n_perms > 1:
+        return CYCLIC_SHIFTS[:n_perms]
+    rat = rationales.get(uid)
+    return [rat["shift"] if rat else 0]
+
+
 def build_chinese(recs, rationales, n_perms):
     out = []
     for rec in recs:
-        for shift in CYCLIC_SHIFTS[:n_perms]:
+        for shift in shifts_for(rationales, rec["uid"], n_perms):
             p, _ = permute_record(rec, shift)
             key = rationale_key_for(rationales, rec["uid"], shift)
             out.append(make_example(p, p["gold"], rationales, key))
@@ -113,7 +126,7 @@ def build_chinese(recs, rationales, n_perms):
 def build_indonesian(recs, rationales, n_perms):
     out = []
     for rec in recs:
-        for shift in CYCLIC_SHIFTS[:n_perms]:
+        for shift in shifts_for(rationales, rec["uid"], n_perms):
             p, _ = permute_record(rec, shift)
             key = rationale_key_for(rationales, rec["uid"], shift)
             # vote-expansion: one example per annotator vote == soft-label CE
