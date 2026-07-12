@@ -164,7 +164,7 @@ def main():
                             "gate_proj", "up_proj", "down_proj"],
             task_type="CAUSAL_LM")
 
-    grpo_config = GRPOConfig(
+    want = dict(
         output_dir=args.output_dir,
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
@@ -183,6 +183,12 @@ def main():
         seed=args.seed,
         report_to="none",
     )
+    import inspect
+    supported = set(inspect.signature(GRPOConfig.__init__).parameters)
+    dropped = [k for k in want if k not in supported]
+    if dropped:
+        print(f"note: GRPOConfig in this TRL version ignores {dropped}")
+    grpo_config = GRPOConfig(**{k: v for k, v in want.items() if k in supported})
 
     trainer = GRPOTrainer(model=model, reward_funcs=make_reward_fn(),
                           args=grpo_config, train_dataset=ds,

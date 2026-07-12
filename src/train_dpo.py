@@ -108,7 +108,9 @@ def main():
                             "gate_proj", "up_proj", "down_proj"],
             task_type="CAUSAL_LM")
 
-    dpo_config = DPOConfig(
+    # desired config — filtered below to whatever this TRL version's DPOConfig
+    # actually accepts (arg names like max_prompt_length drift across versions)
+    want = dict(
         output_dir=args.output_dir,
         beta=args.beta,
         num_train_epochs=args.epochs,
@@ -128,6 +130,12 @@ def main():
         seed=args.seed,
         report_to="none",
     )
+    import inspect
+    supported = set(inspect.signature(DPOConfig.__init__).parameters)
+    dropped = [k for k in want if k not in supported]
+    if dropped:
+        print(f"note: DPOConfig in this TRL version ignores {dropped}")
+    dpo_config = DPOConfig(**{k: v for k, v in want.items() if k in supported})
 
     trainer = DPOTrainer(model=model, ref_model=None, args=dpo_config,
                          train_dataset=ds, processing_class=tok,
