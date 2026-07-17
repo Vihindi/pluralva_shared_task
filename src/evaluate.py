@@ -103,13 +103,13 @@ def softmax(xs):
     return [e / z for e in es]
 
 
-def score_mcq(scorer, rec, n_perms=1, prior=None, prior_tau=0.0):
+def score_mcq(scorer, rec, n_perms=1, prior=None, prior_tau=0.0, value_summaries="auto"):
     """Return dict original_letter -> prob, permutation-averaged and calibrated."""
     acc = {ltr: 0.0 for ltr in LETTERS4}
     shifts = CYCLIC_SHIFTS[:n_perms]
     for shift in shifts:
         p, old_to_new = permute_record(rec, shift)
-        messages = build_messages(p, mode="direct")
+        messages = build_messages(p, mode="direct", value_summaries=value_summaries)
         lps = scorer.score_candidates(messages, [f"Answer: {l}" for l in LETTERS4])
         probs = dict(zip(LETTERS4, softmax(lps)))
         for old, new in old_to_new.items():
@@ -161,7 +161,8 @@ def run_eval(args, scorer):
                 extra = {"p_yes_A": pa, "p_yes_B": pb}
             else:
                 probs = score_mcq(scorer, rec, n_perms=args.n_perms,
-                                  prior=prior, prior_tau=args.prior_tau)
+                                  prior=prior, prior_tau=args.prior_tau,
+                                  value_summaries=args.value_summaries)
                 pred = max(probs, key=probs.get)
                 extra = {"probs": probs}
             ok = is_correct(rec, pred)
@@ -220,7 +221,8 @@ def run_predict(args, scorer):
                 pred, _, _ = score_si(scorer, rec, threshold=args.si_threshold)
             else:
                 probs = score_mcq(scorer, rec, n_perms=args.n_perms,
-                                  prior=dev_priors.get(ds), prior_tau=args.prior_tau)
+                                  prior=dev_priors.get(ds), prior_tau=args.prior_tau,
+                                  value_summaries=args.value_summaries)
                 pred = max(probs, key=probs.get)
             out.write(json.dumps({"dataset": args.dataset_names[ds],
                                   "id": rec["uid"], "LLM_Output": pred},
@@ -249,10 +251,31 @@ def main():
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--test_files", nargs="+", default=[])
     ap.add_argument("--out", default=None)
+    ap.add_argument("--value_summaries", default=None,
+                    help="path to a custom summaries json (default: "
+                         "id_value_summaries.json at the repo root is used "
+                         "AUTOMATICALLY — this flag only overrides which file")
+    ap.add_argument("--no_value_summaries", action="store_true",
+                    help="disable Indonesian value-context injection entirely "
+                         "(use when evaluating an adapter trained BEFORE this "
+                         "default was introduced, to avoid a prompt mismatch)")
     args = ap.parse_args()
     # submission "dataset" field names — adjust if organizers specify others
     args.dataset_names = {"chinese": "chinese", "indonesian": "indonesian",
                           "sri_lankan": "sri_lankan"}
+    if args.no_value_summaries:
+        args.value_summaries = None
+        print("Indonesian value-context injection: DISABLED (--no_value_summaries)")
+    elif args.value_summaries:
+        from prompts import load_id_value_summaries
+        custom_path = args.value_summaries
+        args.value_summaries = load_id_value_summaries(custom_path)
+        print(f"loaded {len(args.value_summaries)} value summaries from "
+              f"{custom_path!r} for Indonesian prompt injection")
+    else:
+        args.value_summaries = "auto"  # -> id_value_summaries.json at repo root
+        print("Indonesian value-context injection: AUTO "
+              "(id_value_summaries.json at repo root)")
 
     scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit)
     if args.mode == "eval":

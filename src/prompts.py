@@ -75,6 +75,14 @@ ID_INSTR_COT = (
     "format \"Answer: X\" (X adalah A/B/C/D)."
 )
 
+# Optional value-context block (id_value_summaries.json experiment): prepended
+# to the Indonesian user turn only when a summaries dict is passed to
+# build_messages. Absent by default -> byte-identical to the original prompt.
+ID_VALUE_CONTEXT_BLOCK = """Konteks nilai — pola umum bagaimana mayoritas masyarakat Indonesia menilai dilema nilai "{value}":
+{summary}
+
+"""
+
 # -------------------------------------------------- Sri Lankan (binary) -----
 SI_BIN_SYSTEM = (
     "You are an assistant with deep familiarity with Sri Lankan societal values "
@@ -128,13 +136,55 @@ SI_4WAY_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: A\" (only A is c
                         "\"Answer: 0\" (neither is correct).")
 
 
-def build_messages(rec, mode="direct", si_statement=None):
+def load_id_value_summaries(path):
+    """Load id_value_summaries.json (5 Pancasila values -> summary text)."""
+    import json
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+import os as _os
+
+_DEFAULT_ID_SUMMARIES_PATH = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+    "id_value_summaries.json")
+_id_summaries_cache = {}
+
+
+def _auto_id_value_summaries():
+    """Lazily load and cache id_value_summaries.json from the repo root.
+    Returns {} (no-op) if the file isn't present, so this never raises."""
+    if "d" not in _id_summaries_cache:
+        try:
+            _id_summaries_cache["d"] = load_id_value_summaries(_DEFAULT_ID_SUMMARIES_PATH)
+        except FileNotFoundError:
+            _id_summaries_cache["d"] = {}
+    return _id_summaries_cache["d"]
+
+
+def build_messages(rec, mode="direct", si_statement=None, value_summaries="auto"):
     """Build chat messages for a processed record.
 
     For sri_lankan records, si_statement="A"|"B" selects the binary-decomposition
     prompt for that statement; si_statement=None gives the 4-way baseline prompt.
+
+    value_summaries: controls the Indonesian value-context block (ignored for
+    chinese/sri_lankan):
+      "auto" (the default) -> auto-loads id_value_summaries.json from the repo
+        root and injects the matching value's summary. This is now the
+        standing default, so every caller that doesn't pass this argument at
+        all (build_sft_data.py, bootstrap_rationales.py, train_dpo.py,
+        self_consistency.py, make_submission.py, ...) embeds it automatically.
+      a dict {value_english: summary_text} -> use that dict instead (e.g. to
+        A/B against claude_id_summaries.jsonl).
+      None -> explicitly disable injection, reproducing the original prompt
+        byte-for-byte. Use this when evaluating an adapter that was trained
+        BEFORE this default changed, to avoid a train/inference prompt mismatch.
+
     Returns a list of {"role", "content"} dicts (no assistant turn).
     """
+    if value_summaries == "auto":
+        value_summaries = _auto_id_value_summaries()
     ds = rec["dataset"]
     if ds == "chinese":
         instr = ZH_INSTR_DIRECT if mode == "direct" else ZH_INSTR_COT
@@ -155,6 +205,11 @@ def build_messages(rec, mode="direct", si_statement=None):
             opt_a=rec["options"]["A"], opt_b=rec["options"]["B"],
             opt_c=rec["options"]["C"], opt_d=rec["options"]["D"],
             instruction=instr)
+        if value_summaries:
+            summary = value_summaries.get(rec["value_english"])
+            if summary:
+                user = ID_VALUE_CONTEXT_BLOCK.format(
+                    value=rec["value_english"], summary=summary) + user
         return [{"role": "system", "content": ID_SYSTEM},
                 {"role": "user", "content": user}]
 
