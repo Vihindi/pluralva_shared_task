@@ -85,11 +85,13 @@ ID_VALUE_CONTEXT_BLOCK = """Konteks nilai — pola umum bagaimana mayoritas masy
 
 # -------------------------------------------------- Sri Lankan (binary) -----
 SI_BIN_SYSTEM = (
-    "You are an assistant with deep familiarity with Sri Lankan societal values "
-    "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
-    "question and one candidate statement, both in Sinhala. Judge whether the "
-    "statement is a correct and socially appropriate answer to the question "
-    "according to the given Sri Lankan value."
+    # "You are an assistant with deep familiarity with Sri Lankan societal values "
+    # "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
+    # "question and one candidate statement, both in Sinhala. Judge whether the "
+    # "statement is a correct and socially appropriate answer to the question "
+    # "according to the given Sri Lankan value."
+    """You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
+    Judge whether the statement is a correct and socially appropriate answer to the question according to the given Sri Lankan value."""
 )
 
 SI_BIN_USER = """Value being tested: {value_english}
