@@ -111,19 +111,19 @@ REDUCE_PROMPT_ID = """You are an expert on Indonesian societal values (Pancasila
 
 Write EXACTLY 5 numbered insight summaries in Indonesian (1. ... 5. ...), each 2-3 sentences. Each insight must capture a distinct pattern of how Indonesians see these kinds of problems and how the majority tends to respond (what they prioritize, what they avoid, what trade-offs they accept). Do not mention specific letters or options — describe the reasoning patterns."""
 
-CHUNK_PROMPT_ZH = """你正在分析中国社会如何看待与价值类别"{value}"相关的价值困境。
+CHUNK_PROMPT_ZH = """You are analyzing how Chinese society views value dilemmas related to the value category "{value}".
 
-以下是该价值类别中，符合多数人判断的正确选项的部分解释：
+Below are explanations of the correct options that match majority judgment within this value category:
 
 {rationales}
 
-请用中文总结（不超过150字）：在这类"{value}"困境中，中国社会通常优先考虑什么？多数人倾向于选择哪种类型的行动？"""
+Summarize in Chinese (max 150 characters): In this type of "{value}" dilemma, what does Chinese society generally prioritize? What kind of action does the majority tend to choose?"""
 
-REDUCE_PROMPT_ZH = """你是研究中国社会价值观的专家。以下是关于中国人如何评判"{value}"类价值困境的若干分析笔记：
+REDUCE_PROMPT_ZH = """You are an expert on Chinese societal values. Below are several analytical notes on how Chinese people judge "{value}"-type value dilemmas:
 
 {chunk_summaries}
 
-请用中文写出恰好5条编号的洞察总结（格式为 1. ... 5. ...），每条2-3句话。每条洞察应捕捉一种独特的推理模式（优先考虑什么、回避什么、能接受何种权衡）。不要提及具体的选项字母（如A/B/C/D），只描述推理模式本身。"""
+Write EXACTLY 5 numbered insight summaries in Chinese (1. ... 5. ...), each 2-3 sentences. Each insight should capture a distinct reasoning pattern (what is prioritized, what is avoided, what trade-offs are acceptable). Do not mention specific option letters (like A/B/C/D) — describe only the reasoning pattern itself."""
 
 CHUNK_PROMPT_SI = """You are analyzing how Sri Lankan society (across its Sinhalese, Tamil, Muslim, and Burgher communities) judges value dilemmas related to the value "{value}".
 
