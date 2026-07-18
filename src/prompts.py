@@ -102,113 +102,116 @@ SI_VALUE_CONTEXT_BLOCK = """Value context — common patterns in how Sri Lankan 
 # exact English string. Only the surrounding descriptive text is translated.
 
 # --- English original (kept for reference / easy revert) -------------------
-# SI_BIN_SYSTEM = (
-#     "You are an assistant with deep familiarity with Sri Lankan societal values "
-#     "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
-#     "question and one candidate statement, both in Sinhala. Judge whether the "
-#     "statement is a correct and socially appropriate answer to the question "
-#     "according to the given Sri Lankan value."
-# )
-#
-# SI_BIN_USER = """Value being tested: {value_english}
-#
-# Question (Sinhala):
-# {question}
-#
-# Candidate statement (Sinhala):
-# {statement}
-#
-# {instruction}"""
-#
-# SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
-#                        "correct and appropriate answer to the question, or \"Answer: No\" "
-#                        "if it is not.")
-# SI_BIN_INSTR_COT = (
-#     "First, briefly explain in English what the question asks and whether the "
-#     "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
-#     "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
-# )
-
-# --- Sinhala (active) --------------------------------------------------------
 SI_BIN_SYSTEM = (
-    # සිංහල, දෙමළ, මුස්ලිම් සහ බර්ගර් ප්‍රජාවන් ඇතුළු 
-    "ඔබ ශ්‍රී ලාංකික සමාජයේ වටිනාකම් "
-    "පිළිබඳ ගැඹුරු අවබෝධයක් ඇති සහායකයෙකි. ඔබට ප්‍රශ්නයක් සහ ඊට අදාළ අපේක්ෂිත ප්‍රකාශයක් "
-    "ලැබෙනු ඇත; දෙකම සිංහල භාෂාවෙනි. දී ඇති ශ්‍රී ලාංකික වටිනාකමට අනුව, එම ප්‍රකාශය එම "
-    "ප්‍රශ්නයට නිවැරදි හා සමාජීය වශයෙන් උචිත පිළිතුරක් දැයි විනිශ්චය කරන්න."
+    # "You are an assistant with deep familiarity with Sri Lankan societal values "
+    # "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
+    # "question and one candidate statement, both in Sinhala. Judge whether the "
+    # "statement is a correct and socially appropriate answer to the question "
+    # "according to the given Sri Lankan value."
+
+    """You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
+    Judge whether the statement is a correct and socially appropriate answer to the question according to the given Sri Lankan value."""
 )
 
-SI_BIN_USER = """පරීක්ෂා කරන වටිනාකම: {value_english}
+SI_BIN_USER = """Value being tested: {value_english}
 
-ප්‍රශ්නය (සිංහල):
+Question (Sinhala):
 {question}
 
-අපේක්ෂිත ප්‍රකාශය (සිංහල):
+Candidate statement (Sinhala):
 {statement}
 
 {instruction}"""
 
-SI_BIN_INSTR_DIRECT = (
-    "ප්‍රකාශය ප්‍රශ්නයට නිවැරදි හා උචිත පිළිතුරක් නම් හරියටම එක පේළියකින් "
-    "\"Answer: Yes\" ලෙසත්, එසේ නොවේ නම් \"Answer: No\" ලෙසත් පිළිතුරු දෙන්න."
-)
+SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
+                       "correct and appropriate answer to the question, or \"Answer: No\" "
+                       "if it is not.")
 SI_BIN_INSTR_COT = (
-    "පළමුව, ප්‍රශ්නය අසන්නේ කුමක්ද සහ ශ්‍රී ලාංකික සන්දර්භයක් තුළ එම ප්‍රකාශය එම වටිනාකම "
-    "ආරක්ෂා කරයිද නැත්නම් උල්ලංඝනය කරයිද යන්න ඉංග්‍රීසියෙන් කෙටියෙන් පැහැදිලි කරන්න "
-    "(වචන 80කට වඩා අඩුවෙන්). අවසානයේ, අවසාන පේළියේ \"Answer: Yes\" හෝ \"Answer: No\" "
-    "ලෙස ඔබේ අවසාන තීරණය දෙන්න."
+    "First, briefly explain in English what the question asks and whether the "
+    "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
+    "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
 )
+
+# # --- Sinhala (active) --------------------------------------------------------
+# SI_BIN_SYSTEM = (
+#     # සිංහල, දෙමළ, මුස්ලිම් සහ බර්ගර් ප්‍රජාවන් ඇතුළු 
+#     "ඔබ ශ්‍රී ලාංකික සමාජයේ වටිනාකම් "
+#     "පිළිබඳ ගැඹුරු අවබෝධයක් ඇති සහායකයෙකි. ඔබට ප්‍රශ්නයක් සහ ඊට අදාළ අපේක්ෂිත ප්‍රකාශයක් "
+#     "ලැබෙනු ඇත; දෙකම සිංහල භාෂාවෙනි. දී ඇති ශ්‍රී ලාංකික වටිනාකමට අනුව, එම ප්‍රකාශය එම "
+#     "ප්‍රශ්නයට නිවැරදි හා සමාජීය වශයෙන් උචිත පිළිතුරක් දැයි විනිශ්චය කරන්න."
+# )
+
+# SI_BIN_USER = """පරීක්ෂා කරන වටිනාකම: {value_english}
+
+# ප්‍රශ්නය (සිංහල):
+# {question}
+
+# අපේක්ෂිත ප්‍රකාශය (සිංහල):
+# {statement}
+
+# {instruction}"""
+
+# SI_BIN_INSTR_DIRECT = (
+#     "ප්‍රකාශය ප්‍රශ්නයට නිවැරදි හා උචිත පිළිතුරක් නම් හරියටම එක පේළියකින් "
+#     "\"Answer: Yes\" ලෙසත්, එසේ නොවේ නම් \"Answer: No\" ලෙසත් පිළිතුරු දෙන්න."
+# )
+# SI_BIN_INSTR_COT = (
+#     "පළමුව, ප්‍රශ්නය අසන්නේ කුමක්ද සහ ශ්‍රී ලාංකික සන්දර්භයක් තුළ එම ප්‍රකාශය එම වටිනාකම "
+#     "ආරක්ෂා කරයිද නැත්නම් උල්ලංඝනය කරයිද යන්න ඉංග්‍රීසියෙන් කෙටියෙන් පැහැදිලි කරන්න "
+#     "(වචන 80කට වඩා අඩුවෙන්). අවසානයේ, අවසාන පේළියේ \"Answer: Yes\" හෝ \"Answer: No\" "
+#     "ලෙස ඔබේ අවසාන තීරණය දෙන්න."
+# )
 
 # ---------------------------------------------- Sri Lankan (4-way, baseline) -
 # --- English original (kept for reference / easy revert) -------------------
-# SI_4WAY_SYSTEM = (
-#     "You are an assistant with deep familiarity with Sri Lankan societal values. "
-#     "You will read a question and two candidate statements in Sinhala. Decide "
-#     "which statement(s) are correct answers according to the given value."
-# )
-#
-# SI_4WAY_USER = """Value being tested: {value_english}
-#
-# Question (Sinhala):
-# {question}
-#
-# Statement A (Sinhala):
-# {opt_a}
-#
-# Statement B (Sinhala):
-# {opt_b}
-#
-# {instruction}"""
-#
-# SI_4WAY_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: A\" (only A is correct), "
-#                         "\"Answer: B\" (only B is correct), \"Answer: Both\", or "
-#                         "\"Answer: 0\" (neither is correct).")
-
-# --- Sinhala (active) --------------------------------------------------------
 SI_4WAY_SYSTEM = (
-    "ඔබ ශ්‍රී ලාංකික සමාජ වටිනාකම් පිළිබඳ ගැඹුරු අවබෝධයක් ඇති සහායකයෙකි. ඔබට ප්‍රශ්නයක් "
-    "සහ සිංහලෙන් වූ අපේක්ෂිත ප්‍රකාශ දෙකක් ලැබෙනු ඇත. දී ඇති වටිනාකමට අනුව නිවැරදි "
-    "ප්‍රකාශය(ය) කුමක්ද යන්න තීරණය කරන්න."
+    "You are an assistant with deep familiarity with Sri Lankan societal values. "
+    "You will read a question and two candidate statements in Sinhala. Decide "
+    "which statement(s) are correct answers according to the given value."
 )
 
-SI_4WAY_USER = """පරීක්ෂා කරන වටිනාකම: {value_english}
+SI_4WAY_USER = """Value being tested: {value_english}
 
-ප්‍රශ්නය (සිංහල):
+Question (Sinhala):
 {question}
 
-A ප්‍රකාශය (සිංහල):
+Statement A (Sinhala):
 {opt_a}
 
-B ප්‍රකාශය (සිංහල):
+Statement B (Sinhala):
 {opt_b}
 
 {instruction}"""
 
-SI_4WAY_INSTR_DIRECT = (
-    "හරියටම එක පේළියකින් පිළිතුරු දෙන්න: A පමණක් නිවැරදි නම් \"Answer: A\", "
-    "B පමණක් නිවැරදි නම් \"Answer: B\", දෙකම නිවැරදි නම් \"Answer: Both\", "
-    "කිසිවක් නිවැරදි නොවේ නම් \"Answer: 0\"."
-)
+SI_4WAY_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: A\" (only A is correct), "
+                        "\"Answer: B\" (only B is correct), \"Answer: Both\", or "
+                        "\"Answer: 0\" (neither is correct).")
+
+# # --- Sinhala (active) --------------------------------------------------------
+# SI_4WAY_SYSTEM = (
+#     "ඔබ ශ්‍රී ලාංකික සමාජ වටිනාකම් පිළිබඳ ගැඹුරු අවබෝධයක් ඇති සහායකයෙකි. ඔබට ප්‍රශ්නයක් "
+#     "සහ සිංහලෙන් වූ අපේක්ෂිත ප්‍රකාශ දෙකක් ලැබෙනු ඇත. දී ඇති වටිනාකමට අනුව නිවැරදි "
+#     "ප්‍රකාශය(ය) කුමක්ද යන්න තීරණය කරන්න."
+# )
+
+# SI_4WAY_USER = """පරීක්ෂා කරන වටිනාකම: {value_english}
+
+# ප්‍රශ්නය (සිංහල):
+# {question}
+
+# A ප්‍රකාශය (සිංහල):
+# {opt_a}
+
+# B ප්‍රකාශය (සිංහල):
+# {opt_b}
+
+# {instruction}"""
+
+# SI_4WAY_INSTR_DIRECT = (
+#     "හරියටම එක පේළියකින් පිළිතුරු දෙන්න: A පමණක් නිවැරදි නම් \"Answer: A\", "
+#     "B පමණක් නිවැරදි නම් \"Answer: B\", දෙකම නිවැරදි නම් \"Answer: Both\", "
+#     "කිසිවක් නිවැරදි නොවේ නම් \"Answer: 0\"."
+# )
 
 
 def load_value_summaries(path):
