@@ -115,7 +115,8 @@ def _merge_system_into_user(messages):
 
 class Scorer:
     def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8,
-                 trust_remote_code=False):
+                 trust_remote_code=False, merge_system=False):
+        self.merge_system = merge_system
         self.tok, self.processor = _load_tokenizer(model_name, trust_remote_code)
         kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
                   "trust_remote_code": trust_remote_code}
@@ -155,6 +156,11 @@ class Scorer:
         there), retrying with the system turn folded in if a template rejects
         the 'system' role. Falls back to a plain concatenation only for true
         base LMs (OLMoE, jetmoe) that have no chat template anywhere."""
+        if self.merge_system:
+            # models whose authors discourage a system turn (e.g. DeepSeek-R1
+            # distills: "all instructions should be contained within the user
+            # prompt") — fold it in up front rather than only on template error
+            messages = _merge_system_into_user(messages)
         kwargs = {"add_generation_prompt": True, "tokenize": True,
                   "return_tensors": None}
         for obj in (self.tok, self.processor):
@@ -195,7 +201,8 @@ class Scorer:
         return out
 
     @torch.no_grad()
-    def generate_text(self, messages, max_new_tokens=1024, enable_thinking=True):
+    def generate_text(self, messages, max_new_tokens=1024, enable_thinking=True,
+                      temperature=0.0):
         """Free-generation with reasoning ON, for thought-channel models (e.g.
         Gemma 4) whose answer can't be read off next-token logits. Returns the
         decoded completion (special tokens kept, so channel markers survive for
@@ -206,10 +213,11 @@ class Scorer:
         attn = torch.ones_like(input_ids)
         eos = self.tok.eos_token_id
         pad = self.tok.pad_token_id if self.tok.pad_token_id is not None else eos
+        sampling = ({"do_sample": True, "temperature": temperature, "top_p": 0.95}
+                    if temperature > 0 else {"do_sample": False})
         gen = self.model.generate(
             input_ids=input_ids, attention_mask=attn,
-            max_new_tokens=max_new_tokens, do_sample=False,
-            pad_token_id=pad)
+            max_new_tokens=max_new_tokens, pad_token_id=pad, **sampling)
         new_ids = gen[0][len(prompt_ids):]
         return self.tok.decode(new_ids, skip_special_tokens=False)
 
@@ -270,7 +278,7 @@ def score_si(scorer, rec, threshold=0.5, value_summaries="auto"):
 
 
 def score_mcq_gen(scorer, rec, n_perms=1, value_summaries="auto",
-                  max_new_tokens=1024):
+                  max_new_tokens=1024, temperature=0.0):
     """Generation-based MCQ scoring for thought-channel models (Gemma 4): let
     the model reason, parse the final 'Answer: X', majority-vote across cyclic
     option permutations. Returns a prob dict (vote share per original letter)."""
@@ -279,7 +287,8 @@ def score_mcq_gen(scorer, rec, n_perms=1, value_summaries="auto",
         p, old_to_new = permute_record(rec, shift)
         new_to_old = {new: old for old, new in old_to_new.items()}
         messages = build_messages(p, mode="cot", value_summaries=value_summaries)
-        text = scorer.generate_text(messages, max_new_tokens=max_new_tokens)
+        text = scorer.generate_text(messages, max_new_tokens=max_new_tokens,
+                                    temperature=temperature)
         shown = parse_generated_answer(text, LETTERS4)  # letter in displayed order
         if shown is not None:
             votes[new_to_old.get(shown, shown)] += 1
@@ -290,7 +299,7 @@ def score_mcq_gen(scorer, rec, n_perms=1, value_summaries="auto",
 
 
 def score_si_gen(scorer, rec, threshold=0.5, value_summaries="auto",
-                 max_new_tokens=1024):
+                 max_new_tokens=1024, temperature=0.0):
     """Generation-based Sri Lankan scoring for thought-channel models: reason
     per statement, parse the final 'Answer: Yes/No'. Same (label, pa, pb) shape
     as score_si, with pa/pb in {0.0, 1.0}."""
@@ -298,7 +307,8 @@ def score_si_gen(scorer, rec, threshold=0.5, value_summaries="auto",
     for stmt in ("A", "B"):
         messages = build_messages(rec, mode="cot", si_statement=stmt,
                                   value_summaries=value_summaries)
-        text = scorer.generate_text(messages, max_new_tokens=max_new_tokens)
+        text = scorer.generate_text(messages, max_new_tokens=max_new_tokens,
+                                    temperature=temperature)
         ans = parse_generated_answer(text, ["Yes", "No"])
         p_yes[stmt] = 1.0 if ans == "Yes" else 0.0
     a, b = p_yes["A"] >= threshold, p_yes["B"] >= threshold
@@ -334,7 +344,8 @@ def run_eval(args, scorer):
                     pred, pa, pb = score_si_gen(
                         scorer, rec, threshold=args.si_threshold,
                         value_summaries=args.value_summaries,
-                        max_new_tokens=args.max_new_tokens)
+                        max_new_tokens=args.max_new_tokens,
+                        temperature=args.gen_temperature)
                 else:
                     pred, pa, pb = score_si(scorer, rec, threshold=args.si_threshold,
                                             value_summaries=args.value_summaries)
@@ -343,7 +354,8 @@ def run_eval(args, scorer):
                 if args.generate:
                     probs = score_mcq_gen(scorer, rec, n_perms=args.n_perms,
                                           value_summaries=args.value_summaries,
-                                          max_new_tokens=args.max_new_tokens)
+                                          max_new_tokens=args.max_new_tokens,
+                                          temperature=args.gen_temperature)
                 else:
                     probs = score_mcq(scorer, rec, n_perms=args.n_perms,
                                       prior=prior, prior_tau=args.prior_tau,
@@ -445,6 +457,14 @@ def main():
     ap.add_argument("--max_new_tokens", type=int, default=1024,
                     help="generation budget per item when --generate is set "
                          "(must fit the reasoning trace + final answer)")
+    ap.add_argument("--gen_temperature", type=float, default=0.0,
+                    help="sampling temperature for --generate (0 = greedy). "
+                         "Reasoning models like DeepSeek-R1 distills recommend "
+                         "~0.6; greedy can send them into endless repetition")
+    ap.add_argument("--no_system", action="store_true",
+                    help="fold the system turn into the user turn — required by "
+                         "models whose authors discourage a system prompt "
+                         "(e.g. DeepSeek-R1 distills)")
     ap.add_argument("--test_files", nargs="+", default=[])
     ap.add_argument("--out", default=None)
     ap.add_argument("--value_summaries", default=None,
@@ -474,7 +494,8 @@ def main():
               "(id_value_summaries.json at repo root)")
 
     scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit,
-                    trust_remote_code=args.trust_remote_code)
+                    trust_remote_code=args.trust_remote_code,
+                    merge_system=args.no_system)
     if args.mode == "eval":
         run_eval(args, scorer)
     else:
