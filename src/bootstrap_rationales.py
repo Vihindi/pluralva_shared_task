@@ -120,7 +120,14 @@ def targets_for(rec):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Qwen/Qwen3-8B")
+    ap.add_argument("--model", default="Qwen/Qwen3-8B",
+                    help="default generator model for every dataset")
+    ap.add_argument("--zh_model", default=None,
+                    help="override generator for chinese (default: --model)")
+    ap.add_argument("--id_model", default=None,
+                    help="override generator for indonesian (default: --model)")
+    ap.add_argument("--si_model", default=None,
+                    help="override generator for sri_lankan (default: --model)")
     ap.add_argument("--processed_dir", default=str(ROOT / "processed"))
     ap.add_argument("--out", default=str(ROOT / "processed" / "rationales.jsonl"))
     ap.add_argument("--datasets", nargs="+",
@@ -135,9 +142,42 @@ def main():
                          "to the matching option order")
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--limit", type=int, default=0, help="debug: cap items per dataset")
+    ap.add_argument("--value_summaries", default=None,
+                    help="path to a single custom summaries json applied to ALL "
+                         "datasets (default: the per-country files "
+                         "zh/id/si_value_summaries.json at the repo root are used "
+                         "AUTOMATICALLY, so generated rationales are conditioned "
+                         "on the value-context insights)")
+    ap.add_argument("--no_value_summaries", action="store_true",
+                    help="generate rationales from the plain prompt, without the "
+                         "value-context block")
     args = ap.parse_args()
 
-    gen = Generator(args.model, load_4bit=args.load_4bit)
+    if args.no_value_summaries:
+        args.value_summaries = None
+        print("value-context in rationale prompts: DISABLED (--no_value_summaries)")
+    elif args.value_summaries:
+        from prompts import load_value_summaries
+        custom_path = args.value_summaries
+        args.value_summaries = load_value_summaries(custom_path)
+        print(f"loaded {len(args.value_summaries)} value summaries from "
+              f"{custom_path!r} for rationale-prompt injection")
+    else:
+        args.value_summaries = "auto"
+        print("value-context in rationale prompts: AUTO "
+              "(zh/id/si_value_summaries.json at repo root, per country)")
+
+    # Per-dataset generator models (e.g. a multilingual model for Indonesian,
+    # Llama for the rest). Datasets are processed grouped by model, and each
+    # model is loaded only when needed and freed before the next one, so two
+    # 8B models never occupy the GPU at once.
+    model_for = {"chinese": args.zh_model or args.model,
+                 "indonesian": args.id_model or args.model,
+                 "sri_lankan": args.si_model or args.model}
+    datasets = sorted(args.datasets, key=lambda d: model_for[d])
+    for ds in datasets:
+        print(f"generator for {ds}: {model_for[ds]}")
+
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -146,9 +186,17 @@ def main():
         done = {r["key"] for r in load_jsonl(out_path)}
         print(f"resuming: {len(done)} keys already done")
 
+    gen, loaded_model = None, None
     n_star, n_rationalized = 0, 0
     with open(out_path, "a", encoding="utf-8") as fout:
-        for ds in args.datasets:
+        for ds in datasets:
+            if loaded_model != model_for[ds]:
+                if gen is not None:  # free the previous model before loading
+                    del gen.model, gen.tok, gen
+                    torch.cuda.empty_cache()
+                print(f"loading generator {model_for[ds]} ...")
+                gen = Generator(model_for[ds], load_4bit=args.load_4bit)
+                loaded_model = model_for[ds]
             recs = load_jsonl(Path(args.processed_dir) / f"{ds}.jsonl")
             if args.limit:
                 recs = recs[: args.limit]
@@ -162,7 +210,8 @@ def main():
                 for key, stmt, is_correct, gold_text in targets_for(rec):
                     if key in done:
                         continue
-                    messages = build_messages(rec, mode="cot", si_statement=stmt)
+                    messages = build_messages(rec, mode="cot", si_statement=stmt,
+                                              value_summaries=args.value_summaries)
                     rationale, answer, source = None, None, None
                     for text in gen.chat(messages, n=args.k, temperature=args.temperature):
                         a = parse_answer(text)
