@@ -43,16 +43,40 @@ ROOT = Path(__file__).resolve().parent.parent
 LETTERS4 = ["A", "B", "C", "D"]
 
 
-def _load_tokenizer(model_name):
-    """Load a tokenizer with .encode/.apply_chat_template. Falls back to a
-    processor's tokenizer for multimodal repos (e.g. Gemma 4) that don't expose
-    a bare AutoTokenizer."""
+def _load_tokenizer(model_name, trust_remote_code=False):
+    """Load a tokenizer with .encode/.apply_chat_template.
+
+    Multimodal repos (e.g. Gemma 3/3n/4) keep the chat template on the
+    AutoProcessor, not the bare tokenizer — so if the tokenizer we get has no
+    chat_template, borrow it from the processor. Falls back to the processor's
+    own tokenizer if a bare AutoTokenizer can't be loaded at all."""
+    tok = None
     try:
-        return AutoTokenizer.from_pretrained(model_name)
+        tok = AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code)
     except Exception:
+        tok = None
+    if tok is not None and getattr(tok, "chat_template", None):
+        return tok
+    try:
         from transformers import AutoProcessor
-        proc = AutoProcessor.from_pretrained(model_name)
-        return getattr(proc, "tokenizer", proc)
+        proc = AutoProcessor.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code)
+    except Exception:
+        return tok  # no processor available; use the bare tokenizer (may be base LM)
+    proc_tok = getattr(proc, "tokenizer", None)
+    if tok is None:
+        tok = proc_tok if proc_tok is not None else proc
+    # borrow the chat template if the tokenizer we're returning lacks one
+    if not getattr(tok, "chat_template", None):
+        ct = (getattr(proc, "chat_template", None)
+              or getattr(proc_tok, "chat_template", None))
+        if ct:
+            try:
+                tok.chat_template = ct
+            except (AttributeError, TypeError):
+                pass
+    return tok
 
 
 def _load_lm(model_name, kwargs):
@@ -76,6 +100,13 @@ def _load_lm(model_name, kwargs):
     raise last
 
 
+def _plain_prompt(messages):
+    """Format messages as one plain text prompt for base LMs that have NO chat
+    template (e.g. OLMoE-1B-7B-0924, jetmoe-8b). Just concatenates the turns;
+    the trailing newline lets the scored "Answer: X" continuation start cleanly."""
+    return "\n\n".join(m["content"] for m in messages) + "\n"
+
+
 def _merge_system_into_user(messages):
     """Fold a leading system turn into the first user turn, for chat templates
     (e.g. Gemma) that don't accept a 'system' role. Returns a new list; the
@@ -93,9 +124,11 @@ def _merge_system_into_user(messages):
 
 
 class Scorer:
-    def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8):
-        self.tok = _load_tokenizer(model_name)
-        kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
+    def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8,
+                 trust_remote_code=False):
+        self.tok = _load_tokenizer(model_name, trust_remote_code)
+        kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
+                  "trust_remote_code": trust_remote_code}
         if load_4bit:
             from transformers import BitsAndBytesConfig
             kwargs["quantization_config"] = BitsAndBytesConfig(
@@ -116,6 +149,11 @@ class Scorer:
             return self.tok.apply_chat_template(messages, **kwargs)
 
     def _prompt_ids(self, messages):
+        if not getattr(self.tok, "chat_template", None):
+            # Base LM with no chat template (OLMoE base, jetmoe-8b): format the
+            # turns as plain text and tokenize directly.
+            return list(self.tok.encode(_plain_prompt(messages),
+                                        add_special_tokens=True))
         kwargs = {"add_generation_prompt": True, "tokenize": True, "return_tensors": None}
         try:
             ids = self._apply_template(messages, **kwargs)
@@ -311,6 +349,9 @@ def main():
                     help="0 = no prior calibration; try 0.25-1.0 on CV folds")
     ap.add_argument("--si_threshold", type=float, default=0.5)
     ap.add_argument("--load_4bit", action="store_true")
+    ap.add_argument("--trust_remote_code", action="store_true",
+                    help="allow custom modeling code from the Hub repo (needed "
+                         "for e.g. jetmoe-8b); only enable for repos you trust")
     ap.add_argument("--test_files", nargs="+", default=[])
     ap.add_argument("--out", default=None)
     ap.add_argument("--value_summaries", default=None,
@@ -339,7 +380,8 @@ def main():
         print("Indonesian value-context injection: AUTO "
               "(id_value_summaries.json at repo root)")
 
-    scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit)
+    scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit,
+                    trust_remote_code=args.trust_remote_code)
     if args.mode == "eval":
         run_eval(args, scorer)
     else:
