@@ -29,6 +29,7 @@ import argparse
 import collections
 import json
 import math
+import re
 from pathlib import Path
 
 import torch
@@ -142,19 +143,21 @@ class Scorer:
         self.model.eval()
         self.batch_size = batch_size
 
-    def _apply_template(self, messages, **kwargs):
+    def _apply_template(self, messages, enable_thinking=False, **kwargs):
         try:
-            return self.tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
+            return self.tok.apply_chat_template(
+                messages, enable_thinking=enable_thinking, **kwargs)
         except TypeError:
             return self.tok.apply_chat_template(messages, **kwargs)
 
-    def _prompt_ids(self, messages):
+    def _prompt_ids(self, messages, enable_thinking=False):
         if not getattr(self.tok, "chat_template", None):
             # Base LM with no chat template (OLMoE base, jetmoe-8b): format the
             # turns as plain text and tokenize directly.
             return list(self.tok.encode(_plain_prompt(messages),
                                         add_special_tokens=True))
-        kwargs = {"add_generation_prompt": True, "tokenize": True, "return_tensors": None}
+        kwargs = {"add_generation_prompt": True, "tokenize": True,
+                  "return_tensors": None, "enable_thinking": enable_thinking}
         try:
             ids = self._apply_template(messages, **kwargs)
         except Exception as e:
@@ -193,6 +196,42 @@ class Scorer:
             out.append(lp)
             del logits, input_ids, attn
         return out
+
+    @torch.no_grad()
+    def generate_text(self, messages, max_new_tokens=1024, enable_thinking=True):
+        """Free-generation with reasoning ON, for thought-channel models (e.g.
+        Gemma 4) whose answer can't be read off next-token logits. Returns the
+        decoded completion (special tokens kept, so channel markers survive for
+        the caller's answer parser)."""
+        prompt_ids = self._prompt_ids(messages, enable_thinking=enable_thinking)
+        input_ids = torch.tensor([prompt_ids], dtype=torch.long,
+                                 device=self.model.device)
+        attn = torch.ones_like(input_ids)
+        eos = self.tok.eos_token_id
+        pad = self.tok.pad_token_id if self.tok.pad_token_id is not None else eos
+        gen = self.model.generate(
+            input_ids=input_ids, attention_mask=attn,
+            max_new_tokens=max_new_tokens, do_sample=False,
+            pad_token_id=pad)
+        new_ids = gen[0][len(prompt_ids):]
+        return self.tok.decode(new_ids, skip_special_tokens=False)
+
+
+_ANSWER_RE = re.compile(r"[Aa]nswer\s*[:：]\s*\**\s*([ABCD]|Yes|No|Both|0)\b")
+
+
+def parse_generated_answer(text, allowed):
+    """Pull the final answer from a generation. Prefers the LAST 'Answer: X'
+    (a reasoning model states its conclusion last); falls back to the last bare
+    allowed token. Returns None if nothing matches `allowed`."""
+    hits = [m.group(1) for m in _ANSWER_RE.finditer(text)
+            if m.group(1) in allowed]
+    if hits:
+        return hits[-1]
+    # fallback: last standalone allowed token anywhere in the text
+    esc = "|".join(re.escape(a) for a in allowed)
+    bare = re.findall(rf"(?<![A-Za-z0-9])({esc})(?![A-Za-z0-9])", text)
+    return bare[-1] if bare else None
 
 
 def softmax(xs):
@@ -233,6 +272,43 @@ def score_si(scorer, rec, threshold=0.5, value_summaries="auto"):
     return label, p_yes["A"], p_yes["B"]
 
 
+def score_mcq_gen(scorer, rec, n_perms=1, value_summaries="auto",
+                  max_new_tokens=1024):
+    """Generation-based MCQ scoring for thought-channel models (Gemma 4): let
+    the model reason, parse the final 'Answer: X', majority-vote across cyclic
+    option permutations. Returns a prob dict (vote share per original letter)."""
+    votes = collections.Counter()
+    for shift in CYCLIC_SHIFTS[:n_perms]:
+        p, old_to_new = permute_record(rec, shift)
+        new_to_old = {new: old for old, new in old_to_new.items()}
+        messages = build_messages(p, mode="cot", value_summaries=value_summaries)
+        text = scorer.generate_text(messages, max_new_tokens=max_new_tokens)
+        shown = parse_generated_answer(text, LETTERS4)  # letter in displayed order
+        if shown is not None:
+            votes[new_to_old.get(shown, shown)] += 1
+    total = sum(votes.values())
+    if not total:
+        return {l: 0.0 for l in LETTERS4}  # unparseable -> all zero (predicts A)
+    return {l: votes.get(l, 0) / total for l in LETTERS4}
+
+
+def score_si_gen(scorer, rec, threshold=0.5, value_summaries="auto",
+                 max_new_tokens=1024):
+    """Generation-based Sri Lankan scoring for thought-channel models: reason
+    per statement, parse the final 'Answer: Yes/No'. Same (label, pa, pb) shape
+    as score_si, with pa/pb in {0.0, 1.0}."""
+    p_yes = {}
+    for stmt in ("A", "B"):
+        messages = build_messages(rec, mode="cot", si_statement=stmt,
+                                  value_summaries=value_summaries)
+        text = scorer.generate_text(messages, max_new_tokens=max_new_tokens)
+        ans = parse_generated_answer(text, ["Yes", "No"])
+        p_yes[stmt] = 1.0 if ans == "Yes" else 0.0
+    a, b = p_yes["A"] >= threshold, p_yes["B"] >= threshold
+    label = "Both" if (a and b) else "A" if a else "B" if b else "0"
+    return label, p_yes["A"], p_yes["B"]
+
+
 def is_correct(rec, pred):
     if rec["dataset"] == "indonesian":
         return pred in set(rec["consensus"])
@@ -257,12 +333,24 @@ def run_eval(args, scorer):
         n_ok = 0
         for i, rec in enumerate(eval_recs):
             if ds == "sri_lankan":
-                pred, pa, pb = score_si(scorer, rec, threshold=args.si_threshold)
+                if args.generate:
+                    pred, pa, pb = score_si_gen(
+                        scorer, rec, threshold=args.si_threshold,
+                        value_summaries=args.value_summaries,
+                        max_new_tokens=args.max_new_tokens)
+                else:
+                    pred, pa, pb = score_si(scorer, rec, threshold=args.si_threshold,
+                                            value_summaries=args.value_summaries)
                 extra = {"p_yes_A": pa, "p_yes_B": pb}
             else:
-                probs = score_mcq(scorer, rec, n_perms=args.n_perms,
-                                  prior=prior, prior_tau=args.prior_tau,
-                                  value_summaries=args.value_summaries)
+                if args.generate:
+                    probs = score_mcq_gen(scorer, rec, n_perms=args.n_perms,
+                                          value_summaries=args.value_summaries,
+                                          max_new_tokens=args.max_new_tokens)
+                else:
+                    probs = score_mcq(scorer, rec, n_perms=args.n_perms,
+                                      prior=prior, prior_tau=args.prior_tau,
+                                      value_summaries=args.value_summaries)
                 pred = max(probs, key=probs.get)
                 extra = {"probs": probs}
             ok = is_correct(rec, pred)
@@ -352,6 +440,14 @@ def main():
     ap.add_argument("--trust_remote_code", action="store_true",
                     help="allow custom modeling code from the Hub repo (needed "
                          "for e.g. jetmoe-8b); only enable for repos you trust")
+    ap.add_argument("--generate", action="store_true",
+                    help="reason-then-parse instead of constrained scoring: let "
+                         "the model generate (thinking ON) and parse the final "
+                         "'Answer: X'. Needed for thought-channel models like "
+                         "Gemma 4 whose answer isn't readable from next-token logits")
+    ap.add_argument("--max_new_tokens", type=int, default=1024,
+                    help="generation budget per item when --generate is set "
+                         "(must fit the reasoning trace + final answer)")
     ap.add_argument("--test_files", nargs="+", default=[])
     ap.add_argument("--out", default=None)
     ap.add_argument("--value_summaries", default=None,
