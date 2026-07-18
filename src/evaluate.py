@@ -45,39 +45,28 @@ LETTERS4 = ["A", "B", "C", "D"]
 
 
 def _load_tokenizer(model_name, trust_remote_code=False):
-    """Load a tokenizer with .encode/.apply_chat_template.
-
-    Multimodal repos (e.g. Gemma 3/3n/4) keep the chat template on the
-    AutoProcessor, not the bare tokenizer — so if the tokenizer we get has no
-    chat_template, borrow it from the processor. Falls back to the processor's
-    own tokenizer if a bare AutoTokenizer can't be loaded at all."""
+    """Return (tokenizer, processor). The tokenizer is used for .encode/.decode
+    and eos; the processor (if any) is what actually holds a working chat
+    template for multimodal repos like Gemma 3/3n/4 — where processor.chat_template
+    the *attribute* is None but processor.apply_chat_template() still works
+    (it loads chat_template.jinja internally). We therefore keep the processor
+    object and call it directly, rather than trying to copy the template string."""
     tok = None
     try:
         tok = AutoTokenizer.from_pretrained(
             model_name, trust_remote_code=trust_remote_code)
     except Exception:
         tok = None
-    if tok is not None and getattr(tok, "chat_template", None):
-        return tok
+    proc = None
     try:
         from transformers import AutoProcessor
         proc = AutoProcessor.from_pretrained(
             model_name, trust_remote_code=trust_remote_code)
     except Exception:
-        return tok  # no processor available; use the bare tokenizer (may be base LM)
-    proc_tok = getattr(proc, "tokenizer", None)
-    if tok is None:
-        tok = proc_tok if proc_tok is not None else proc
-    # borrow the chat template if the tokenizer we're returning lacks one
-    if not getattr(tok, "chat_template", None):
-        ct = (getattr(proc, "chat_template", None)
-              or getattr(proc_tok, "chat_template", None))
-        if ct:
-            try:
-                tok.chat_template = ct
-            except (AttributeError, TypeError):
-                pass
-    return tok
+        proc = None
+    if tok is None:  # base tokenizer unavailable — fall back to the processor's
+        tok = getattr(proc, "tokenizer", None) or proc
+    return tok, proc
 
 
 def _load_lm(model_name, kwargs):
@@ -127,7 +116,7 @@ def _merge_system_into_user(messages):
 class Scorer:
     def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8,
                  trust_remote_code=False):
-        self.tok = _load_tokenizer(model_name, trust_remote_code)
+        self.tok, self.processor = _load_tokenizer(model_name, trust_remote_code)
         kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
                   "trust_remote_code": trust_remote_code}
         if load_4bit:
@@ -143,37 +132,45 @@ class Scorer:
         self.model.eval()
         self.batch_size = batch_size
 
-    def _apply_template(self, messages, enable_thinking=False, **kwargs):
+    @staticmethod
+    def _templater_call(obj, messages, enable_thinking, **kwargs):
         try:
-            return self.tok.apply_chat_template(
+            return obj.apply_chat_template(
                 messages, enable_thinking=enable_thinking, **kwargs)
         except TypeError:
-            return self.tok.apply_chat_template(messages, **kwargs)
+            return obj.apply_chat_template(messages, **kwargs)
 
-    def _prompt_ids(self, messages, enable_thinking=False):
-        if not getattr(self.tok, "chat_template", None):
-            # Base LM with no chat template (OLMoE base, jetmoe-8b): format the
-            # turns as plain text and tokenize directly.
-            return list(self.tok.encode(_plain_prompt(messages),
-                                        add_special_tokens=True))
-        kwargs = {"add_generation_prompt": True, "tokenize": True,
-                  "return_tensors": None, "enable_thinking": enable_thinking}
-        try:
-            ids = self._apply_template(messages, **kwargs)
-        except Exception as e:
-            # Some chat templates (e.g. Gemma) reject a 'system' role, raising a
-            # jinja TemplateError. Fold the system turn into the first user turn
-            # and retry, so prompts.py can stay model-agnostic. Re-raise anything
-            # that isn't about the system role.
-            if "system" not in str(e).lower():
-                raise
-            ids = self._apply_template(_merge_system_into_user(messages), **kwargs)
+    @staticmethod
+    def _normalize_ids(ids):
         # transformers ≥4.51 may return BatchEncoding even without return_tensors
         if hasattr(ids, "input_ids"):
             ids = ids["input_ids"]
         if ids and isinstance(ids[0], list):
             ids = ids[0]
         return list(ids)
+
+    def _prompt_ids(self, messages, enable_thinking=False):
+        """Build prompt token ids. Tries the tokenizer's chat template, then the
+        processor's (multimodal repos like Gemma 4 keep the working template
+        there), retrying with the system turn folded in if a template rejects
+        the 'system' role. Falls back to a plain concatenation only for true
+        base LMs (OLMoE, jetmoe) that have no chat template anywhere."""
+        kwargs = {"add_generation_prompt": True, "tokenize": True,
+                  "return_tensors": None}
+        for obj in (self.tok, self.processor):
+            if obj is None or not hasattr(obj, "apply_chat_template"):
+                continue
+            for msgs in (messages, _merge_system_into_user(messages)):
+                try:
+                    ids = self._templater_call(obj, msgs, enable_thinking, **kwargs)
+                    return self._normalize_ids(ids)
+                except Exception as e:
+                    if "system" in str(e).lower():
+                        continue      # retry this obj with the system turn merged
+                    break             # no usable template on this obj; try the next
+        # no chat template anywhere -> base LM: plain-text prompt
+        return list(self.tok.encode(_plain_prompt(messages),
+                                    add_special_tokens=True))
 
     @torch.no_grad()
     def score_candidates(self, messages, candidates):
