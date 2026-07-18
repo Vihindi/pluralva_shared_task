@@ -43,9 +43,58 @@ ROOT = Path(__file__).resolve().parent.parent
 LETTERS4 = ["A", "B", "C", "D"]
 
 
+def _load_tokenizer(model_name):
+    """Load a tokenizer with .encode/.apply_chat_template. Falls back to a
+    processor's tokenizer for multimodal repos (e.g. Gemma 4) that don't expose
+    a bare AutoTokenizer."""
+    try:
+        return AutoTokenizer.from_pretrained(model_name)
+    except Exception:
+        from transformers import AutoProcessor
+        proc = AutoProcessor.from_pretrained(model_name)
+        return getattr(proc, "tokenizer", proc)
+
+
+def _load_lm(model_name, kwargs):
+    """Load a model whose forward returns text-vocab .logits. Tries the plain
+    CausalLM mapping first, then the multimodal auto-classes (Gemma 3/3n use
+    ImageTextToText; Gemma 4 uses MultimodalLM) — a text-only forward
+    (input_ids, no pixel/audio inputs) still yields the logits our constrained
+    scorer needs. The extra classes may not exist on older transformers, so each
+    is resolved defensively."""
+    import transformers
+    candidates = ["AutoModelForCausalLM", "AutoModelForImageTextToText",
+                  "AutoModelForMultimodalLM"]
+    classes = [getattr(transformers, n) for n in candidates
+               if getattr(transformers, n, None) is not None]
+    last = None
+    for cls in classes:
+        try:
+            return cls.from_pretrained(model_name, **kwargs)
+        except (ValueError, KeyError, OSError) as e:
+            last = e  # wrong auto-mapping for this arch; try the next class
+    raise last
+
+
+def _merge_system_into_user(messages):
+    """Fold a leading system turn into the first user turn, for chat templates
+    (e.g. Gemma) that don't accept a 'system' role. Returns a new list; the
+    original is unchanged. No-op if there's no leading system message."""
+    if not messages or messages[0]["role"] != "system":
+        return messages
+    sys_txt = messages[0]["content"]
+    rest = messages[1:]
+    for i, m in enumerate(rest):
+        if m["role"] == "user":
+            merged = dict(m)
+            merged["content"] = f"{sys_txt}\n\n{m['content']}"
+            return rest[:i] + [merged] + rest[i + 1:]
+    return rest  # no user turn (shouldn't happen for our prompts)
+
+
 class Scorer:
     def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8):
-        self.tok = AutoTokenizer.from_pretrained(model_name)
+        self.tok = _load_tokenizer(model_name)
         kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
         if load_4bit:
             from transformers import BitsAndBytesConfig
@@ -53,19 +102,31 @@ class Scorer:
                 load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
                 bnb_4bit_quant_type="nf4")
             kwargs.pop("torch_dtype")
-        self.model = AutoModelForCausalLM.from_pretrained(model_name, **kwargs)
+        self.model = _load_lm(model_name, kwargs)
         if adapter:
             from peft import PeftModel
             self.model = PeftModel.from_pretrained(self.model, adapter)
         self.model.eval()
         self.batch_size = batch_size
 
+    def _apply_template(self, messages, **kwargs):
+        try:
+            return self.tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
+        except TypeError:
+            return self.tok.apply_chat_template(messages, **kwargs)
+
     def _prompt_ids(self, messages):
         kwargs = {"add_generation_prompt": True, "tokenize": True, "return_tensors": None}
         try:
-            ids = self.tok.apply_chat_template(messages, enable_thinking=False, **kwargs)
-        except TypeError:
-            ids = self.tok.apply_chat_template(messages, **kwargs)
+            ids = self._apply_template(messages, **kwargs)
+        except Exception as e:
+            # Some chat templates (e.g. Gemma) reject a 'system' role, raising a
+            # jinja TemplateError. Fold the system turn into the first user turn
+            # and retry, so prompts.py can stay model-agnostic. Re-raise anything
+            # that isn't about the system role.
+            if "system" not in str(e).lower():
+                raise
+            ids = self._apply_template(_merge_system_into_user(messages), **kwargs)
         # transformers ≥4.51 may return BatchEncoding even without return_tensors
         if hasattr(ids, "input_ids"):
             ids = ids["input_ids"]
@@ -121,11 +182,12 @@ def score_mcq(scorer, rec, n_perms=1, prior=None, prior_tau=0.0, value_summaries
     return acc
 
 
-def score_si(scorer, rec, threshold=0.5):
+def score_si(scorer, rec, threshold=0.5, value_summaries="auto"):
     """Binary-decomposed Sri Lankan scoring -> (label, p_yes_A, p_yes_B)."""
     p_yes = {}
     for stmt in ("A", "B"):
-        messages = build_messages(rec, mode="direct", si_statement=stmt)
+        messages = build_messages(rec, mode="direct", si_statement=stmt,
+                                  value_summaries=value_summaries)
         lps = scorer.score_candidates(messages, ["Answer: Yes", "Answer: No"])
         p_yes[stmt] = softmax(lps)[0]
     a, b = p_yes["A"] >= threshold, p_yes["B"] >= threshold
