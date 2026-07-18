@@ -137,12 +137,14 @@ def run_predict(args):
             print(f"[{ds}] {len(todo)}/{len(recs)} items to score")
             for i, rec in enumerate(todo):
                 if ds == "sri_lankan":
-                    _, pa, pb = score_si(scorer, rec)
+                    _, pa, pb = score_si(scorer, rec,
+                                         value_summaries=args.value_summaries)
                     row = {"uid": rec["uid"], "dataset": ds,
                            "p_yes_A": pa, "p_yes_B": pb}
                 else:
                     # raw probs only (tau=0); calibration happens at composition
-                    probs = score_mcq(scorer, rec, n_perms=args.n_perms)
+                    probs = score_mcq(scorer, rec, n_perms=args.n_perms,
+                                      value_summaries=args.value_summaries)
                     row = {"uid": rec["uid"], "dataset": ds, "probs": probs}
                 details.write(json.dumps(row, ensure_ascii=False) + "\n")
                 details.flush()
@@ -235,7 +237,30 @@ def main():
                     help="compose mode: details files to (fold-)ensemble")
     ap.add_argument("--predictions", default=None,
                     help="package mode: existing predictions.jsonl")
+    ap.add_argument("--value_summaries", default=None,
+                    help="path to a single custom summaries json applied to ALL "
+                         "datasets (default: the per-country files "
+                         "zh/id/si_value_summaries.json at the repo root are used "
+                         "AUTOMATICALLY — this flag overrides them with one file)")
+    ap.add_argument("--no_value_summaries", action="store_true",
+                    help="disable value-context injection entirely for all three "
+                         "countries (use when predicting with an adapter trained "
+                         "BEFORE this default was introduced, to avoid a prompt "
+                         "mismatch)")
     args = ap.parse_args()
+    if args.no_value_summaries:
+        args.value_summaries = None
+        print("value-context injection: DISABLED (--no_value_summaries)")
+    elif args.value_summaries:
+        from prompts import load_value_summaries
+        custom_path = args.value_summaries
+        args.value_summaries = load_value_summaries(custom_path)
+        print(f"loaded {len(args.value_summaries)} value summaries from "
+              f"{custom_path!r} (applied to all datasets whose keys match)")
+    else:
+        args.value_summaries = "auto"  # -> per-country files at repo root
+        print("value-context injection: AUTO (zh/id/si_value_summaries.json "
+              "at repo root, per country)")
 
     ids_by_ds = test_ids(args.test_dir)
     total = sum(len(v) for v in ids_by_ds.values())
