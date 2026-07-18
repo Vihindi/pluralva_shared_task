@@ -74,12 +74,15 @@ def permute_record(rec, shift):
     return new, old_to_new
 
 
-def make_example(rec, target_letter, rationales, rationale_key, si_statement=None):
-    messages = build_messages(rec, mode="direct", si_statement=si_statement)
+def make_example(rec, target_letter, rationales, rationale_key, si_statement=None,
+                 value_summaries="auto"):
+    messages = build_messages(rec, mode="direct", si_statement=si_statement,
+                              value_summaries=value_summaries)
     rat = rationales.get(rationale_key)
     if rat:
         assistant = f"{rat['text']}\nAnswer: {target_letter}"
-        msgs = build_messages(rec, mode="cot", si_statement=si_statement)
+        msgs = build_messages(rec, mode="cot", si_statement=si_statement,
+                              value_summaries=value_summaries)
         messages = msgs
     else:
         assistant = f"Answer: {target_letter}"
@@ -113,17 +116,18 @@ def shifts_for(rationales, uid, n_perms):
     return [rat["shift"] if rat else 0]
 
 
-def build_chinese(recs, rationales, n_perms):
+def build_chinese(recs, rationales, n_perms, value_summaries="auto"):
     out = []
     for rec in recs:
         for shift in shifts_for(rationales, rec["uid"], n_perms):
             p, _ = permute_record(rec, shift)
             key = rationale_key_for(rationales, rec["uid"], shift)
-            out.append(make_example(p, p["gold"], rationales, key))
+            out.append(make_example(p, p["gold"], rationales, key,
+                                    value_summaries=value_summaries))
     return out
 
 
-def build_indonesian(recs, rationales, n_perms):
+def build_indonesian(recs, rationales, n_perms, value_summaries="auto"):
     out = []
     for rec in recs:
         for shift in shifts_for(rationales, rec["uid"], n_perms):
@@ -134,17 +138,19 @@ def build_indonesian(recs, rationales, n_perms):
                 # a rationale argues for one answer; never pair it with a
                 # different vote's target letter
                 vote_key = key if (key and rationales[key]["answer"] == vote) else None
-                out.append(make_example(p, vote, rationales, vote_key))
+                out.append(make_example(p, vote, rationales, vote_key,
+                                        value_summaries=value_summaries))
     return out
 
 
-def build_sri_lankan(recs, rationales):
+def build_sri_lankan(recs, rationales, value_summaries="auto"):
     out = []
     for rec in recs:
         for stmt, ok in (("A", rec["stmt_A_ok"]), ("B", rec["stmt_B_ok"])):
             target = "Yes" if ok else "No"
             key = f"{rec['uid']}_{stmt}"
-            out.append(make_example(rec, target, rationales, key, si_statement=stmt))
+            out.append(make_example(rec, target, rationales, key, si_statement=stmt,
+                                    value_summaries=value_summaries))
     return out
 
 
@@ -156,8 +162,32 @@ def main():
                     help="optional rationales.jsonl from bootstrap_rationales.py")
     ap.add_argument("--n_perms", type=int, default=4,
                     help="cyclic option permutations for ZH/ID (1 = no augmentation)")
+    ap.add_argument("--value_summaries", default=None,
+                    help="path to a single custom summaries json applied to ALL "
+                         "datasets (default: the per-country files "
+                         "zh/id/si_value_summaries.json at the repo root are used "
+                         "AUTOMATICALLY — this flag overrides them with one file)")
+    ap.add_argument("--no_value_summaries", action="store_true",
+                    help="disable value-context injection entirely when building "
+                         "this SFT data — use this to train an adapter with no "
+                         "value-context block, then evaluate/predict it with the "
+                         "matching --no_value_summaries flag too")
     args = ap.parse_args()
     processed, out_dir = Path(args.processed_dir), Path(args.out_dir)
+
+    if args.no_value_summaries:
+        args.value_summaries = None
+        print("value-context injection: DISABLED (--no_value_summaries)")
+    elif args.value_summaries:
+        from prompts import load_value_summaries
+        custom_path = args.value_summaries
+        args.value_summaries = load_value_summaries(custom_path)
+        print(f"loaded {len(args.value_summaries)} value summaries from "
+              f"{custom_path!r} (applied to all datasets whose keys match)")
+    else:
+        args.value_summaries = "auto"
+        print("value-context injection: AUTO (zh/id/si_value_summaries.json "
+              "at repo root, per country)")
 
     rationales = {}
     if args.rationales:
@@ -167,10 +197,11 @@ def main():
                                     "shift": r.get("shift", 0)}
         print(f"loaded {len(rationales)} rationales")
 
+    vs = args.value_summaries
     builders = {
-        "zh": ("chinese.jsonl", lambda recs: build_chinese(recs, rationales, args.n_perms)),
-        "id": ("indonesian.jsonl", lambda recs: build_indonesian(recs, rationales, args.n_perms)),
-        "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(recs, rationales)),
+        "zh": ("chinese.jsonl", lambda recs: build_chinese(recs, rationales, args.n_perms, vs)),
+        "id": ("indonesian.jsonl", lambda recs: build_indonesian(recs, rationales, args.n_perms, vs)),
+        "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(recs, rationales, vs)),
     }
     rng = random.Random(SEED)
     summary = {}

@@ -1,0 +1,25 @@
+SYSTEM:
+You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
+    Judge whether the statement is a correct and socially appropriate answer to the question according to the given Sri Lankan value.
+
+USER:
+Value context — common patterns in how Sri Lankan society judges "Justice" dilemmas:
+1. **Prioritization of Fairness and Equality**: Sri Lankans tend to emphasize fairness and equality in their reasoning about justice, often supporting responses that treat individuals equally and according to their order of arrival. This is reflected in the value of "piliganthika," which prioritizes equal treatment for all. In disputes, they favor fair and lawful processes that consider both legal and traditional factors.
+
+2. **Protection of Weaker Individuals**: Sri Lankans tend to prioritize the rights of weaker individuals, such as in land boundary disputes, and support responses that promote their well-being. This suggests a strong sense of social responsibility and a commitment to protecting vulnerable members of society. In contrast, responses that disregard the rights of others are generally not supported.
+
+3. **Avoidance of Bias and Personal Relationships**: Sri Lankans tend to avoid responses that introduce bias or prioritize personal relationships in disputes. Instead, they favor fair and impartial processes that consider the rights of all parties involved. This suggests a strong commitment to upholding the principles of justice and avoiding favoritism.
+
+4. **Emphasis on Rehabilitation and Restoration**: Sri Lankans tend to support responses that promote rehabilitation and restoration, rather than simply punishing or punishing offenders. This suggests a focus on healing and rebuilding, rather than simply exacting revenge or retribution. In disputes, they favor responses that consider the consequences of actions on others and promote reconciliation.
+
+5. **Trade-offs between Consequences and Rehabilitation**: Sri Lankans tend to accept trade-offs between the consequences of actions and the need for rehabilitation and restoration. In disputes, they may prioritize rehabilitation and restoration over strict punishment, especially if it promotes long-term benefits for all parties involved. This suggests a willingness to balance competing values and prioritize the greater good.
+
+Value being tested: Justice
+
+Question (Sinhala):
+ක්‍රීඩා නීති රීති හා ආචාර ධර්ම සුරැකීමෙන්,
+
+Candidate statement (Sinhala):
+අන් අයගේ ගෞරවයට හා පැසසුමට ලක් වීම.
+
+First, briefly explain in English what the question asks and whether the statement upholds or violates the value in a Sri Lankan context (max 80 words). Then give your final judgment on the last line as "Answer: Yes" or "Answer: No".
