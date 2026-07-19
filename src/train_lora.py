@@ -120,6 +120,11 @@ def main():
                     help="keep only the newest N step-checkpoints (saves disk)")
     ap.add_argument("--resume", action="store_true",
                     help="resume from the latest checkpoint-* in --output_dir")
+    ap.add_argument("--logging_strategy", choices=["epoch", "steps"], default="epoch",
+                    help="'epoch' (default) prints one loss line per epoch; "
+                         "'steps' prints every --logging_steps optimizer steps")
+    ap.add_argument("--logging_steps", type=int, default=10,
+                    help="only used when --logging_strategy steps")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -194,7 +199,8 @@ def main():
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
         bf16=True,
-        logging_steps=10,
+        logging_strategy=args.logging_strategy,
+        logging_steps=args.logging_steps,
         save_strategy="steps" if args.save_steps > 0 else "epoch",
         save_steps=args.save_steps if args.save_steps > 0 else 500,
         save_total_limit=args.save_total_limit,
