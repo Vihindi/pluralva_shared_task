@@ -196,7 +196,9 @@ def main():
     ap.add_argument("--api_key", default=os.environ.get("GEMINI_API_KEY"),
                     help="defaults to $GEMINI_API_KEY (preferred — do not "
                          "hardcode a key into this repo)")
-    ap.add_argument("--model", default="gemini-flash-latest")
+    ap.add_argument("--model", default="gemini-3.5-flash",
+                    help="Gemini model ID (default: gemini-3.5-flash, GA since "
+                         "May 2026)")
     ap.add_argument("--mmlu", default=str(ROOT / "sinhala_mmlu.json"))
     ap.add_argument("--si_dev", default=str(ROOT / "processed" / "sri_lankan.jsonl"))
     ap.add_argument("--out", default=str(ROOT / "processed" / "mmlu_value_tags.json"))

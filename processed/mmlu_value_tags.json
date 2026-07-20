@@ -1,0 +1,650 @@
+{
+  "Civics|2": {
+    "value": "Personal Growth",
+    "confidence": "high",
+    "reason": "The question highlights that a planned student is able to achieve their goals, which is a fundamental aspect of personal development and growth (පෞද්ගලික වර්ධනය) in the Sri Lankan educational context.",
+    "q_no": 2,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|3": {
+    "value": "Respect",
+    "confidence": "high",
+    "reason": "The question asks for the correct posture when singing the school anthem. Standing at attention (සීරුවෙන් සිටීම) is a fundamental way of showing respect (ගෞරවය) to the school and its anthem, which is a key value taught in Sri Lankan schools.",
+    "q_no": 3,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|5": {
+    "value": "Sustainability",
+    "confidence": "low",
+    "reason": "The question asks about utilizing natural physical resources like sunlight, air, and water to generate energy, which relates to renewable energy and sustainability. However, since it is a factual science question, the confidence is low.",
+    "q_no": 5,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|8": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "The question highlights the negative consequence (stress) of not being planned or organized as a student. In the Sri Lankan educational context, planning, time management, and orderly behavior are core components of 'Discipline' (විනය), which is taught as an essential value for student success.",
+    "q_no": 8,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|11": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The correct answer, 'Protecting school property' (පාසල සතු දේපළ ආරක්ෂා කිරීම), is a fundamental duty and civic responsibility taught to students in Sri Lankan schools, representing the value of Responsibility (වගකීම).",
+    "q_no": 11,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|13": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The correct answer 'යහපත් පුරවැසියන් බිහි කිරීම' (producing good citizens) highlights the school's role in fostering civic responsibility and duty among students to serve their society effectively.",
+    "q_no": 13,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|14": {
+    "value": "Personal Growth",
+    "confidence": "high",
+    "reason": "The question focuses on identifying one's own weaknesses in order to minimize them, which is a fundamental aspect of self-improvement and Personal Growth (පෞද්ගලික වර්ධනය).",
+    "q_no": 14,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|20": {
+    "value": "Patriotism",
+    "confidence": "high",
+    "reason": "The correct answer highlights generating thoughts about the service rendered by the school to the nation ('ජාතියට සිදුවන මෙහෙය'), which directly aligns with the value of Patriotism.",
+    "q_no": 20,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|21": {
+    "value": "Ambition",
+    "confidence": "low",
+    "reason": "The question asks about the term for the future goals/aspirations of a school, which is 'Vision' (දැක්ම). This relates to 'Ambition' (අභිලාෂය) as it represents future aspirations, but since it is a factual curriculum question, the confidence is low.",
+    "q_no": 21,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|22": {
+    "value": "Self-expression",
+    "confidence": "high",
+    "reason": "The correct answer 'අදහස් ප්‍රකාශ කිරීම' translates to 'expressing opinions' or 'expressing ideas', which directly aligns with the societal value of 'Self-expression' (ස්වයං ප්‍රකාශනය).",
+    "q_no": 22,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|23": {
+    "value": "Health",
+    "confidence": "high",
+    "reason": "The correct answer focuses on raising awareness about proper health and hygiene methods, which directly aligns with the societal value of Health (සෞඛ්‍යය).",
+    "q_no": 23,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|25": {
+    "value": "Morality",
+    "confidence": "high",
+    "reason": "The question asks to identify the option containing only good qualities of a person (යහපත් ගති ලක්ෂණ). The correct answer includes speaking pleasantly, being kind, and being truthful, which collectively represent core moral virtues or 'Morality' (සදාචාරය) in Sri Lankan society and education.",
+    "q_no": 25,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|26": {
+    "value": "Discipline",
+    "confidence": "medium",
+    "reason": "Planning and organizing one's work to make it easier and more efficient is a core aspect of self-discipline (විනය) and systematic behavior taught in the Sri Lankan curriculum.",
+    "q_no": 26,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|27": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "The question addresses the negative trait of procrastination (වැඩ කල් දැමීම) in an unplanned student, which directly relates to the value of self-discipline, time management, and personal organization.",
+    "q_no": 27,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|32": {
+    "value": "Resilience",
+    "confidence": "high",
+    "reason": "The question asks for the quality needed to overcome challenges, and the correct answer is self-confidence (ආත්ම විශ්වාසය). In the Sri Lankan educational and societal context, building self-confidence to face and overcome challenges is a core aspect of developing Resilience (ඔරොත්තු දීමේ හැකියාව).",
+    "q_no": 32,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|33": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "Planning and organizing are key components of personal discipline (විනය) in the Sri Lankan educational context, which directly leads to reduced mental stress and efficient management of life.",
+    "q_no": 33,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|34": {
+    "value": "Personal Growth",
+    "confidence": "high",
+    "reason": "The question asks for an action one can take to achieve their goals, and the correct answer is engaging in sports and co-curricular activities. In the Sri Lankan educational context, participation in these activities is strongly associated with personality development and overall personal growth.",
+    "q_no": 34,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|36": {
+    "value": "Culture and Tradition",
+    "confidence": "high",
+    "reason": "The question and correct answer focus on preserving school traditions and passing them down to future generations, which directly embodies the value of Culture and Tradition.",
+    "q_no": 36,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|38": {
+    "value": "Ambition",
+    "confidence": "high",
+    "reason": "A school's vision ('දැක්ම') represents its long-term aspirations and the goals it aims to achieve in the future, which directly aligns with the value of Ambition (අභිලාෂය).",
+    "q_no": 38,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|39": {
+    "value": "Family",
+    "confidence": "high",
+    "reason": "The question specifically asks about the common characteristics of a family, and the correct answer highlights kinship, which is the foundational element of the family unit in Sri Lankan society.",
+    "q_no": 39,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|40": {
+    "value": "Resilience",
+    "confidence": "high",
+    "reason": "The correct answer, 'ජය පරාජය සතුටින් විදදරා ගැනීම' (happily enduring/bearing victory and defeat), represents the quality of sportsmanship and emotional resilience, which is the ability to cope with both success and failure in life.",
+    "q_no": 40,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|42": {
+    "value": "Family",
+    "confidence": "high",
+    "reason": "The question addresses the challenges faced by modern family units when both parents work, specifically highlighting the reduction in love, care, and protection for children, which directly relates to the core societal value of Family (පවුල).",
+    "q_no": 42,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|43": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The correct answer emphasizes using data and information critically and accurately for the sustenance of society, which directly relates to the civic and ethical 'Responsibility' (වගකීම) of an individual towards their community.",
+    "q_no": 43,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|44": {
+    "value": "Responsibility",
+    "confidence": "medium",
+    "reason": "The question discusses the characteristics of rights (අයිතිවාසිකම්), which in the Sri Lankan civic education curriculum are fundamentally linked with duties and responsibilities (යුතුකම් සහ වගකීම්) of a citizen.",
+    "q_no": 44,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|49": {
+    "value": "Security",
+    "confidence": "medium",
+    "reason": "The correct answer is the 'Right to life' (ජීවත් වීමේ අයිතිය), which is a fundamental civil right that guarantees the security, protection, and preservation of an individual's existence.",
+    "q_no": 49,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|50": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "The correct answer highlights appreciating fairness and being law-abiding (rules-compliant), which are core components of 'Discipline' (විනය) in the Sri Lankan educational and sports context.",
+    "q_no": 50,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|54": {
+    "value": "Family",
+    "confidence": "high",
+    "reason": "The question specifically asks about a right that an individual receives from their family, which is the provision of food and nutrition. This directly highlights the role, responsibilities, and value of the family unit in Sri Lankan society.",
+    "q_no": 54,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|56": {
+    "value": "Ambition",
+    "confidence": "high",
+    "reason": "The question asks to identify long-term life goals, and the correct answer highlights achieving high academic success (9 As in O/Levels and entering university). This directly relates to having high aspirations and 'Ambition' (අභිලාෂය) in life.",
+    "q_no": 56,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|57": {
+    "value": "Responsibility",
+    "confidence": "medium",
+    "reason": "The question tests the concept of a smart consumer, which is directly related to consumer responsibility (පාරිභෝගික වගකීම) in the Sri Lankan curriculum, emphasizing the responsible decision-making of an individual when purchasing goods.",
+    "q_no": 57,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|58": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The question discusses the relationship between a child's right to education and their corresponding duty (යුතුකම), which is to engage diligently in their studies. In the Sri Lankan educational and societal context, duties and responsibilities (යුතුකම් සහ වගකීම්) are core concepts taught together, m",
+    "q_no": 58,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|60": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The question asks for the legal duties (නීතිමය යුතුකම්) of an individual, and the correct answer is paying taxes and obeying the state. This directly relates to civic responsibility and fulfilling one's duties as a citizen.",
+    "q_no": 60,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|64": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The question is about acting as an intelligent consumer, which directly relates to consumer responsibility (පාරිභෝගික වගකීම්) in the Sri Lankan curriculum. Making informed decisions by comparing prices, checking quality, and knowing price control policies reflects the value of Responsibility.",
+    "q_no": 64,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|65": {
+    "value": "Independence",
+    "confidence": "low",
+    "reason": "The question is factual, asking about the characteristics of self-employed individuals who fulfill social needs. Self-employment is closely associated with independence (ස්වාධීනත්වය), but since the question is purely testing curriculum knowledge about the distribution of self-employment across secto",
+    "q_no": 65,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|66": {
+    "value": "Respect",
+    "confidence": "high",
+    "reason": "The correct answer is 'Respecting elders' (වැඩි හිටියන්ට ගරු කිරීම), which directly embodies the core Sri Lankan societal value of Respect.",
+    "q_no": 66,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|67": {
+    "value": "Compassion",
+    "confidence": "high",
+    "reason": "The correct answer 'අන් අයට ආදරය කිරීම' translates to 'loving others', which is a core aspect of Compassion (කරුණාව) in Sri Lankan societal and cultural values.",
+    "q_no": 67,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|68": {
+    "value": "Community",
+    "confidence": "medium",
+    "reason": "The correct answer states that rights are derived from society itself ('සමාජය තුළින්ම හිමිවීම'), which highlights the fundamental connection between individual rights and the community/society one belongs to.",
+    "q_no": 68,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|69": {
+    "value": "Family",
+    "confidence": "high",
+    "reason": "The question and the correct answer directly address the challenges faced by the modern family unit, specifically regarding the care and protection of its members, which is a core aspect of the 'Family' value in Sri Lankan society.",
+    "q_no": 69,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|72": {
+    "value": "Personal Growth",
+    "confidence": "high",
+    "reason": "The correct answer 'ජීවිත සාර්ථකත්වයට කටයුතු කිරීම' translates to 'working towards the success of life'. In the Sri Lankan educational and cultural context, the ultimate goal of participating in religious and moral programs is the holistic development and success of an individual's life, which direc",
+    "q_no": 72,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|73": {
+    "value": "Morality",
+    "confidence": "high",
+    "reason": "The question is about choosing a good friend (Kalyana Mithra) who does not lead one into bad or immoral deeds. This directly relates to the value of Morality (සදාචාරය), which emphasizes ethical behavior and avoiding wrongdoings.",
+    "q_no": 73,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|74": {
+    "value": "Community",
+    "confidence": "high",
+    "reason": "The correct answer identifies 'Temperance movements' and 'Community Development Societies' as institutions that contribute to the well-being of society, which directly relates to the value of Community (ප්‍රජාව) and collective social welfare.",
+    "q_no": 74,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|75": {
+    "value": "Morality",
+    "confidence": "medium",
+    "reason": "The correct answer highlights avoiding inappropriate videos, which is strongly associated with maintaining moral standards (සදාචාරය) and ethical behavior in the Sri Lankan cultural and educational context.",
+    "q_no": 75,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|79": {
+    "value": "Peace",
+    "confidence": "high",
+    "reason": "The question discusses the benefits of effectively resolving problems, which includes preventing the escalation of conflicts (ගැටුම් වර්ධනය වීම), reducing distress, and fostering cooperation. In the Sri Lankan educational and societal context, effective conflict resolution is a key component of prom",
+    "q_no": 79,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|80": {
+    "value": "Environmentalism",
+    "confidence": "low",
+    "reason": "The question is purely factual, testing knowledge about the natural causes of flooding (blockage of the river mouth) versus man-made causes. It does not directly promote or test a societal value, though it relates to the broader topic of environmental science.",
+    "q_no": 80,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|81": {
+    "value": "Spirituality",
+    "confidence": "high",
+    "reason": "The question asks about the foundation of Sri Lankan cultures, and the correct answer is religion ('ආගම'), which is deeply tied to the societal value of Spirituality ('ආධ්‍යාත්මිකත්වය') in the Sri Lankan context.",
+    "q_no": 81,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|85": {
+    "value": "Community",
+    "confidence": "high",
+    "reason": "The question asks about the purpose of maintaining public services, and the correct answer highlights improving the quality of life of the people (the community). This directly relates to the value of Community, which emphasizes collective well-being and societal development.",
+    "q_no": 85,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|86": {
+    "value": "Equality",
+    "confidence": "high",
+    "reason": "The question discusses democratic features within a school. The correct answer identifies that making decisions solely based on the leader's preference is not democratic, which highlights the value of Equality (සමානාත්මතාවය) where everyone's voice and participation are valued equally rather than hav",
+    "q_no": 86,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|87": {
+    "value": "Respect",
+    "confidence": "high",
+    "reason": "The correct answer highlights 'accepting and respecting people's opinions' (ජනතා අදහස් පිළිගැනීම හා ගරු කිරීම) as a key characteristic of a democratic leader, which directly embodies the value of Respect (ගෞරවය).",
+    "q_no": 87,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|89": {
+    "value": "Personal Growth",
+    "confidence": "medium",
+    "reason": "The correct answer emphasizes that labor productivity depends on the worker's knowledge, skills, and attitudes, which are key components of individual competency and personal development/growth.",
+    "q_no": 89,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|91": {
+    "value": "Community",
+    "confidence": "low",
+    "reason": "The question is a factual inquiry about government initiatives to improve public transportation by adding new buses. While it relates to public infrastructure and community welfare, it is primarily a factual knowledge question rather than a direct test of a societal value.",
+    "q_no": 91,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|93": {
+    "value": "Environmentalism",
+    "confidence": "medium",
+    "reason": "The correct answer provided is 'වෙරළ සංරක්ෂණය' (Coastal conservation), which directly embodies the value of Environmentalism (පරිසර සංරක්ෂණය).",
+    "q_no": 93,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|94": {
+    "value": "Non-violence",
+    "confidence": "high",
+    "reason": "The question identifies 'Anger - scolding, hitting' as an inappropriate reaction to emotion. In Sri Lankan society and curriculum, this teaches that physical and verbal aggression are unacceptable ways to express anger, thereby promoting the core value of Non-violence (අවිහිංසාව).",
+    "q_no": 94,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|95": {
+    "value": "Tolerance",
+    "confidence": "high",
+    "reason": "The correct answer 'අවේගවලට ලක් නොවීමය' refers to not being easily swayed by emotions or impulses, which directly aligns with the Sri Lankan value of 'ඉවසීම' (Tolerance/Patience/Self-restraint) and maintaining a balanced personality.",
+    "q_no": 95,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|96": {
+    "value": "Personal Growth",
+    "confidence": "medium",
+    "reason": "The question tests leadership qualities, specifically communication skills (presentation) and human relations (sociability). In the Sri Lankan educational context, developing these leadership and interpersonal skills is a key component of personal growth and self-development.",
+    "q_no": 96,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|99": {
+    "value": "Spirituality",
+    "confidence": "high",
+    "reason": "The question identifies religion ('ආගම') as the primary foundation shaping the main cultures of Sri Lanka. In the Sri Lankan context, religion and spirituality are deeply intertwined and form the core of societal values and cultural practices.",
+    "q_no": 99,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|102": {
+    "value": "Resilience",
+    "confidence": "high",
+    "reason": "The question tests the understanding of the nature of problems in human life. The correct answer points out that problems are not unusual or random occurrences, but rather a normal part of life. Recognizing this is fundamental to building Resilience (ඔරොත්තු දීමේ හැකියාව), as it helps individuals ac",
+    "q_no": 102,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|103": {
+    "value": "Personal Growth",
+    "confidence": "low",
+    "reason": "The question tests the systematic steps of analyzing a problem (Problem -> Causes -> Impact), which is a cognitive and life skill associated with personal development and problem-solving, falling under Personal Growth. Since it is a methodological question, the confidence is low.",
+    "q_no": 103,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|104": {
+    "value": "Generosity",
+    "confidence": "high",
+    "reason": "The correct answer option explicitly highlights 'ත්‍යාගශීලී බව' (Generosity) as one of the key qualities/skills, which directly aligns with the Sri Lankan societal value of Generosity (ත්‍යාගශීලීත්වය).",
+    "q_no": 104,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|106": {
+    "value": "Pride",
+    "confidence": "high",
+    "reason": "The question asks about developing pride in one's own occupation, which is defined as 'ශ්‍රමාභිමානය' (Pride in Labour / Dignity of Labour). This directly aligns with the societal value of 'Pride' (අභිමානය).",
+    "q_no": 106,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|111": {
+    "value": "Culture and Tradition",
+    "confidence": "high",
+    "reason": "The question asks for the main driving force of any society, and the correct answer is 'Culture' (සංස්කෘතියයි), which directly corresponds to the societal value of 'Culture and Tradition'.",
+    "q_no": 111,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|114": {
+    "value": "Wealth",
+    "confidence": "low",
+    "reason": "The question asks for the primary factor considered when applying for a job, and the correct answer is 'Salary' (වැටුපයි), which directly relates to financial compensation and wealth. Since this is a factual/practical question rather than a moral value judgment, the confidence is set to low.",
+    "q_no": 114,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|116": {
+    "value": "Resilience",
+    "confidence": "medium",
+    "reason": "The question addresses the causes of drug addiction and suicide, identifying prolonged negative emotional states as the key factor. In the Sri Lankan educational context, managing emotions and coping with stress are core components of developing emotional resilience (ඔරොත්තු දීමේ හැකියාව) and life s",
+    "q_no": 116,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|117": {
+    "value": "Health",
+    "confidence": "high",
+    "reason": "The question and correct answer focus on soothing negative emotions through activities like keeping pets and enjoying nature, which directly relates to maintaining mental and emotional health, a key component of the Health curriculum in Sri Lanka.",
+    "q_no": 117,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|118": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The correct answer highlights the role of a leader in guiding a group towards goals and solving problems, which fundamentally represents the value of Responsibility (වගකීම) in leadership.",
+    "q_no": 118,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|121": {
+    "value": "Authority",
+    "confidence": "medium",
+    "reason": "The question asks about the characteristics of an authoritarian leadership style, where decision-making power is centralized in a single leader. This directly relates to the concept of 'Authority' (අධිකාරිය) and how power is exercised in governance or leadership.",
+    "q_no": 121,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|122": {
+    "value": "Equality",
+    "confidence": "high",
+    "reason": "The correct answer is 'සමානාත්මතාවයෙන් කටයුතු කිරීම' (acting with equality), which directly maps to the societal value of 'Equality' (සමානාත්මතාවය) in a family/democratic context.",
+    "q_no": 122,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Civics|123": {
+    "value": "Compassion",
+    "confidence": "high",
+    "reason": "The question asks for an emotional/affective quality of a leader, and the correct answer is 'සංවේදී බව' (Sensitivity/Empathy). In the Sri Lankan cultural context, being sensitive to others' feelings and suffering is a core aspect of 'Compassion' (කරුණාව).",
+    "q_no": 123,
+    "subject": "Civics",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|4": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The question tests the factors one must consider when fulfilling needs and wants, such as family economic status, health, social values, and laws. This fundamentally teaches students to act with responsibility (වගකීම) towards themselves, their family, and society.",
+    "q_no": 4,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|7": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "The question asks about the benefit of adhering to sports ethics and rules. Following rules and regulations is a core aspect of 'Discipline' (විනය) in the Sri Lankan educational and societal context.",
+    "q_no": 7,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|32": {
+    "value": "Health",
+    "confidence": "high",
+    "reason": "The correct answer promotes engaging in outdoor sports activities as a productive way to spend leisure time, which directly relates to maintaining physical and mental health, a key concept in the Sri Lankan Health and Physical Education curriculum.",
+    "q_no": 32,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|35": {
+    "value": "Responsibility",
+    "confidence": "high",
+    "reason": "The question asks about a duty (යුතුකම) that one must fulfill towards those who provide love and security. Fulfilling duties and obligations is a core aspect of 'Responsibility' (වගකීම) in Sri Lankan civic and moral education.",
+    "q_no": 35,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|36": {
+    "value": "Tolerance",
+    "confidence": "high",
+    "reason": "The question discusses what should not be done when a negative emotion (like anger) arises. The correct answer is 'scolding/shouting in anger'. In Sri Lankan culture and curriculum, managing anger and avoiding aggressive outbursts is directly associated with 'ඉවසීම' (Tolerance/Patience).",
+    "q_no": 36,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|41": {
+    "value": "Compassion",
+    "confidence": "high",
+    "reason": "The correct answer highlights that love and security can be provided to others without any financial cost, emphasizing the value of showing empathy, care, and kindness (Compassion/කරුණාව) to fellow human beings.",
+    "q_no": 41,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|51": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "The question discusses the benefits of adhering to sports rules and ethics, which is a fundamental aspect of developing discipline (විනය) in the Sri Lankan school curriculum.",
+    "q_no": 51,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|53": {
+    "value": "Environmentalism",
+    "confidence": "high",
+    "reason": "The correct answer is 'Proper disposal of garbage' (කසළ නිසි පරිදි බැහැර කිරීම), which is a fundamental practice of environmental conservation and cleanliness, representing the value of Environmentalism.",
+    "q_no": 53,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|74": {
+    "value": "Respect",
+    "confidence": "high",
+    "reason": "The correct answer is 'අන් මත වලට ගරු කිරීම', which translates to 'respecting others' opinions'. This directly embodies the societal value of Respect (ගෞරවය).",
+    "q_no": 74,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|93": {
+    "value": "Discipline",
+    "confidence": "high",
+    "reason": "The question tests the concept of sportsmanship, where challenging leadership is identified as unacceptable behavior. In the Sri Lankan educational and societal context, sportsmanship is heavily associated with discipline (විනය), which includes respecting rules, accepting decisions, and adhering to ",
+    "q_no": 93,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|94": {
+    "value": "Health",
+    "confidence": "high",
+    "reason": "The question tests knowledge about the physical and neurological health hazards of drug addiction, which directly relates to the societal value of maintaining personal and public Health.",
+    "q_no": 94,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|95": {
+    "value": "Security",
+    "confidence": "high",
+    "reason": "The question and its correct answer discuss the risks of sexual abuse and exploitation arising from the misuse of technology. In the Sri Lankan educational context, this is taught under personal safety and security (ආරක්ෂාව), emphasizing the importance of maintaining one's security against potential",
+    "q_no": 95,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|100": {
+    "value": "Compassion",
+    "confidence": "high",
+    "reason": "The correct answer highlights helping those with lower skills, which is a direct expression of compassion and kindness towards others who are less capable.",
+    "q_no": 100,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|106": {
+    "value": "Pride",
+    "confidence": "high",
+    "reason": "The question asks about the characteristics of a person with self-pride (ආත්ම අභිමානය), and the correct answer describes facing challenges fearlessly, which is a key aspect of having healthy self-pride and self-esteem (අභිමානය) in the Sri Lankan educational context.",
+    "q_no": 106,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  },
+  "Health and Physical Science|115": {
+    "value": "Pride",
+    "confidence": "high",
+    "reason": "The question specifically asks about the characteristics of a person with self-pride (ආත්ම අභිමානය), and the correct answer describes facing challenges fearlessly, which is a key attribute of healthy self-esteem and pride in oneself.",
+    "q_no": 115,
+    "subject": "Health and Physical Science",
+    "tagger": "gemini:gemini-flash-latest"
+  }
+}
