@@ -34,9 +34,30 @@ import torch
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
 from transformers import (AutoModelForCausalLM, AutoTokenizer, Trainer,
-                          TrainingArguments)
+                          TrainerCallback, TrainingArguments)
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+class EpochLossCallback(TrainerCallback):
+    """Prints a loss line every --logging_steps steps (via the Trainer's usual
+    on_log printing) AND an averaged summary whenever an epoch finishes, so
+    both granularities are visible regardless of --logging_strategy."""
+
+    def __init__(self):
+        self.losses = []
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            self.losses.append(logs["loss"])
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if self.losses:
+            avg = sum(self.losses) / len(self.losses)
+            print(f"=== epoch {state.epoch:.2f} finished | avg train loss: "
+                  f"{avg:.4f} (over {len(self.losses)} logged steps) ===")
+            self.losses = []
+        return control
 
 
 def load_examples(paths):
@@ -120,11 +141,13 @@ def main():
                     help="keep only the newest N step-checkpoints (saves disk)")
     ap.add_argument("--resume", action="store_true",
                     help="resume from the latest checkpoint-* in --output_dir")
-    ap.add_argument("--logging_strategy", choices=["epoch", "steps"], default="epoch",
-                    help="'epoch' (default) prints one loss line per epoch; "
-                         "'steps' prints every --logging_steps optimizer steps")
-    ap.add_argument("--logging_steps", type=int, default=10,
-                    help="only used when --logging_strategy steps")
+    ap.add_argument("--logging_strategy", choices=["epoch", "steps"], default="steps",
+                    help="'steps' (default) prints a loss line every "
+                         "--logging_steps optimizer steps; 'epoch' prints only "
+                         "once per epoch. Either way, an averaged per-epoch "
+                         "summary is ALWAYS printed too (see EpochLossCallback)")
+    ap.add_argument("--logging_steps", type=int, default=100,
+                    help="print training loss every N steps (default 100)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -214,7 +237,8 @@ def main():
 
     trainer = Trainer(model=model, args=train_args, train_dataset=ds,
                       eval_dataset=eval_ds,
-                      data_collator=PadCollator(tok.pad_token_id))
+                      data_collator=PadCollator(tok.pad_token_id),
+                      callbacks=[EpochLossCallback()])
 
     # resume from the newest checkpoint-* in output_dir if asked and one exists
     resume_ckpt = None
