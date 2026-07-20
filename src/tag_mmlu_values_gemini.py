@@ -114,7 +114,7 @@ Guidance:
 - If several values fit, pick the most specific one rather than a broad one.
 - Set confidence to "low" if the question is purely factual and tests no societal value.
 
-Return the English term of the chosen value."""
+Return the English term of the chosen value. Strickly return only the English term of the chosen value."""
 
 
 def load_jsonl(path):
