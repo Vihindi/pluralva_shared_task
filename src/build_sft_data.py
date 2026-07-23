@@ -1,10 +1,12 @@
 """Build Stage-1 SFT training files (chat-format JSONL) from processed data.
 
 Per methodology §2.4:
-  * Option-permutation augmentation (Chinese, Indonesian): each item is emitted
-    under the 4 cyclic option orderings with the gold letter / votes remapped.
-    This teaches order-invariance (mitigates MCQ selection bias) and multiplies
-    the tiny training set 4x.
+  * Option-permutation augmentation (Chinese, Indonesian): each item can be
+    emitted under several cyclic option orderings with the gold letter / votes
+    remapped, teaching order-invariance (mitigates MCQ selection bias). DEFAULT
+    --n_perms is 1 (no augmentation, full rationale coverage); pass --n_perms 4
+    for the 4x augmentation. Value-context injection is OFF by default; pass
+    --value_summaries auto to re-enable it.
   * Indonesian soft labels via vote-expansion: one training example per annotator
     vote (5 per item). Under per-example cross-entropy this is exactly equivalent
     in expectation to training the letter distribution against the empirical
@@ -171,34 +173,34 @@ def main():
                          "untouched; auxiliary items must already carry "
                          "fold=-1 so they train in every fold but are never "
                          "used for CV evaluation.")
-    ap.add_argument("--n_perms", type=int, default=4,
-                    help="cyclic option permutations for ZH/ID (1 = no augmentation)")
+    ap.add_argument("--n_perms", type=int, default=1,
+                    help="cyclic option permutations for ZH/ID. DEFAULT 1 "
+                         "(no augmentation); pass 4 to re-enable the 4x "
+                         "position-debiasing augmentation.")
     ap.add_argument("--value_summaries", default=None,
-                    help="path to a single custom summaries json applied to ALL "
-                         "datasets (default: the per-country files "
-                         "zh/id/si_value_summaries.json at the repo root are used "
-                         "AUTOMATICALLY — this flag overrides them with one file)")
+                    help="'auto' -> inject the per-country files "
+                         "zh/id/si_value_summaries.json at the repo root; or a "
+                         "path to one custom summaries json applied to ALL "
+                         "datasets. DEFAULT: OFF (no value-context block).")
     ap.add_argument("--no_value_summaries", action="store_true",
-                    help="disable value-context injection entirely when building "
-                         "this SFT data — use this to train an adapter with no "
-                         "value-context block, then evaluate/predict it with the "
-                         "matching --no_value_summaries flag too")
+                    help="explicitly disable value-context injection (this is now "
+                         "the default; kept for clarity/back-compat)")
     args = ap.parse_args()
     processed, out_dir = Path(args.processed_dir), Path(args.out_dir)
 
-    if args.no_value_summaries:
+    if args.no_value_summaries or not args.value_summaries:
         args.value_summaries = None
-        print("value-context injection: DISABLED (--no_value_summaries)")
-    elif args.value_summaries:
+        print("value-context injection: DISABLED (default)")
+    elif args.value_summaries == "auto":
+        args.value_summaries = "auto"
+        print("value-context injection: AUTO (zh/id/si_value_summaries.json "
+              "at repo root, per country)")
+    else:
         from prompts import load_value_summaries
         custom_path = args.value_summaries
         args.value_summaries = load_value_summaries(custom_path)
         print(f"loaded {len(args.value_summaries)} value summaries from "
               f"{custom_path!r} (applied to all datasets whose keys match)")
-    else:
-        args.value_summaries = "auto"
-        print("value-context injection: AUTO (zh/id/si_value_summaries.json "
-              "at repo root, per country)")
 
     rationales = {}
     if args.rationales:
