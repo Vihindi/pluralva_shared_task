@@ -131,8 +131,13 @@ def main():
     ap.add_argument("--max_len", type=int, default=1536)
     ap.add_argument("--load_4bit", action="store_true", help="QLoRA (16-24GB GPUs)")
     ap.add_argument("--eval_fold", type=int, default=None,
-                    help="hold out this CV fold as the validation set for loss "
-                         "curves; pass the *_train_full.jsonl files with this")
+                    help="hold out this single CV fold as the validation set for "
+                         "loss curves; pass the *_train_full.jsonl files with this")
+    ap.add_argument("--holdout_folds", nargs="+", type=int, default=None,
+                    help="hold out these folds from training (e.g. --holdout_folds "
+                         "3 4 for the 60/40 experiment split: trains on folds "
+                         "0,1,2 + aux(fold=-1), holds out 3,4 for validation loss). "
+                         "Overrides --eval_fold. Pass the *_train_full.jsonl files.")
     ap.add_argument("--eval_steps", type=int, default=25)
     ap.add_argument("--save_steps", type=int, default=0,
                     help="save a checkpoint every N optimizer steps (0 = only at "
@@ -157,14 +162,21 @@ def main():
 
     rows = load_examples(args.train_files)
     eval_rows = []
-    if args.eval_fold is not None:
-        eval_rows = [r for r in rows if r["fold"] == args.eval_fold]
-        rows = [r for r in rows if r["fold"] != args.eval_fold]
+    holdout = None
+    if args.holdout_folds is not None:
+        holdout = set(args.holdout_folds)
+    elif args.eval_fold is not None:
+        holdout = {args.eval_fold}
+    if holdout is not None:
+        eval_rows = [r for r in rows if r["fold"] in holdout]
+        rows = [r for r in rows if r["fold"] not in holdout]
         if not eval_rows:
             raise SystemExit(
-                f"--eval_fold {args.eval_fold} matched no examples. Pass the "
-                f"*_train_full.jsonl files (fold-filtered *_train_fold{args.eval_fold} "
-                f"files already exclude that fold).")
+                f"holdout folds {sorted(holdout)} matched no examples. Pass the "
+                f"*_train_full.jsonl files (the *_train_fold*.jsonl files already "
+                f"exclude a fold).")
+        print(f"holding out fold(s) {sorted(holdout)}: "
+              f"{len(rows)} train / {len(eval_rows)} validation examples")
 
     def encode_all(rws):
         feats, skipped = [], 0

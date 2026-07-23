@@ -322,8 +322,10 @@ def is_correct(rec, pred):
     return pred == rec["gold"]
 
 
-def compute_prior(records, exclude_fold=None):
-    recs = [r for r in records if exclude_fold is None or r["fold"] != exclude_fold]
+def compute_prior(records, exclude_folds=None):
+    """Label prior over the TRAINING records (everything not in exclude_folds)."""
+    excl = set(exclude_folds) if exclude_folds else set()
+    recs = [r for r in records if r["fold"] not in excl]
     c = collections.Counter(r["gold"] for r in recs)
     n = sum(c.values())
     return {k: v / n for k, v in c.items()}
@@ -331,12 +333,14 @@ def compute_prior(records, exclude_fold=None):
 
 def run_eval(args, scorer):
     results = {}
+    eval_folds = args.eval_folds  # set or None (None = whole processed file)
     details_path = Path(args.out or (ROOT / "processed" / "eval_details.jsonl"))
     details = open(details_path, "w", encoding="utf-8")
     for ds in args.datasets:
         recs = load_jsonl(Path(args.processed_dir) / f"{ds}.jsonl")
-        prior = compute_prior(recs, exclude_fold=args.fold)
-        eval_recs = [r for r in recs if args.fold is None or r["fold"] == args.fold]
+        # prior comes from the training folds (exclude the held-out eval folds)
+        prior = compute_prior(recs, exclude_folds=eval_folds)
+        eval_recs = [r for r in recs if eval_folds is None or r["fold"] in eval_folds]
         n_ok = 0
         for i, rec in enumerate(eval_recs):
             if ds == "sri_lankan":
@@ -439,7 +443,10 @@ def main():
     ap.add_argument("--datasets", nargs="+",
                     default=["chinese", "indonesian", "sri_lankan"])
     ap.add_argument("--fold", type=int, default=None,
-                    help="eval only this CV fold (use with the matching fold adapter)")
+                    help="eval only this single CV fold")
+    ap.add_argument("--folds", nargs="+", type=int, default=None,
+                    help="eval on the union of these folds (e.g. --folds 3 4 for "
+                         "the 60/40 holdout experiment). Overrides --fold.")
     ap.add_argument("--n_perms", type=int, default=1,
                     help="cyclic option permutations to ensemble (ZH/ID)")
     ap.add_argument("--prior_tau", type=float, default=0.0,
@@ -476,6 +483,15 @@ def main():
                          "(use when evaluating an adapter trained BEFORE this "
                          "default was introduced, to avoid a prompt mismatch)")
     args = ap.parse_args()
+    # resolve --folds / --fold into one set of eval folds (None = whole file)
+    if args.folds is not None:
+        args.eval_folds = set(args.folds)
+    elif args.fold is not None:
+        args.eval_folds = {args.fold}
+    else:
+        args.eval_folds = None
+    if args.eval_folds is not None:
+        print(f"evaluating on fold(s): {sorted(args.eval_folds)}")
     # submission "dataset" field names — adjust if organizers specify others
     args.dataset_names = {"chinese": "chinese", "indonesian": "indonesian",
                           "sri_lankan": "sri_lankan"}
