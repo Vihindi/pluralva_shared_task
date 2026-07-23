@@ -109,7 +109,8 @@ SI_BIN_SYSTEM = (
     # "statement is a correct and socially appropriate answer to the question "
     # "according to the given Sri Lankan value."
 
-    """You will receive a Sinhala question and one Sinhala candidate statement.
+    """"You are an assistant with deep familiarity with Sri Lankan societal values across. 
+    You will read a question and one candidate statement, both in Sinhala
 
 Judge whether the candidate statement correctly answers the question according
 to the given Sri Lankan value.
