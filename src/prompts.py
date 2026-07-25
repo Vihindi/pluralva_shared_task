@@ -110,11 +110,8 @@ SI_BIN_SYSTEM = (
     # "according to the given Sri Lankan value."
 
     """
-    You are an assistant with deep familiarity with Sri Lankan societal values.
-    You will read a question and one candidate statement, both in Sinhala.
-    Judge whether the candidate matches exactly what the question asks, including
-    when it asks for an incorrect or 'not' statement. Do not assume the candidate
-    is correct just because it is the only one shown; if it does not match, answer No.
+You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
+Judge whether the statement is a correct , socially appropriate to the question according to the given Sri Lankan value.
 
 """
 )
