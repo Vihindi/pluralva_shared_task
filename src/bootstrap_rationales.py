@@ -28,7 +28,12 @@ from prompts import build_messages
 from build_sft_data import permute_record
 
 ROOT = Path(__file__).resolve().parent.parent
-ANSWER_RE = re.compile(r"Answer:\s*([ABCD]|Yes|No)", re.IGNORECASE)
+# Matches every label across all tasks: MCQ (A-D), binary SI (Yes/No), and
+# 4-way SI (A/B/Both/0). Multi-char tokens are listed before the single-char
+# class and \b anchors the end, so "Answer: Both" captures "Both" (not "B") and
+# "Answer: None" captures "None" (not "No"). Superset of the old regex, so the
+# binary/MCQ paths are unaffected.
+ANSWER_RE = re.compile(r"Answer:\s*(Both|None|Yes|No|[ABCD0])\b", re.IGNORECASE)
 
 
 def uid_shift(uid):
@@ -48,7 +53,9 @@ def parse_answer(text):
     matches = ANSWER_RE.findall(text)
     if not matches:
         return None
-    a = matches[-1].capitalize()
+    a = matches[-1].capitalize()          # both->Both, none->None, yes->Yes
+    if a == "None":                       # 4-way SI: models often write None for 0
+        return "0"
     return a.upper() if a in ("A", "B", "C", "D") else a
 
 
@@ -104,14 +111,21 @@ def rationalize_messages(messages, gold_text):
     return msgs
 
 
-def targets_for(rec):
-    """Yield (key, si_statement, is_correct(ans)->bool, gold_text)."""
+def targets_for(rec, si_mode="binary"):
+    """Yield (key, si_statement, is_correct(ans)->bool, gold_text).
+
+    si_statement is passed straight to build_messages: "A"/"B" -> binary SI
+    prompt for that statement; None -> 4-way SI prompt (both statements shown).
+    """
     ds = rec["dataset"]
     if ds == "chinese":
         yield rec["uid"], None, (lambda a, g=rec["gold"]: a == g), rec["gold"]
     elif ds == "indonesian":
         cons = set(rec["consensus"])
         yield rec["uid"], None, (lambda a, c=cons: a in c), rec["consensus"][0]
+    elif si_mode == "4way":  # one target per item, gold in {A,B,Both,0}
+        g = rec["gold"]
+        yield rec["uid"], None, (lambda a, g=g: a == g), g
     else:  # sri_lankan binary decomposition
         for stmt, ok in (("A", rec["stmt_A_ok"]), ("B", rec["stmt_B_ok"])):
             gold = "Yes" if ok else "No"
@@ -151,6 +165,11 @@ def main():
     ap.add_argument("--no_value_summaries", action="store_true",
                     help="generate rationales from the plain prompt, without the "
                          "value-context block")
+    ap.add_argument("--si_mode", choices=["binary", "4way"], default="binary",
+                    help="Sri Lankan rationale format: 'binary' (default) writes "
+                         "one Yes/No rationale per statement (keys uid_A, uid_B); "
+                         "'4way' writes one A/B/Both/0 rationale per item (key "
+                         "uid). Must match build_sft_data.py --si_mode.")
     args = ap.parse_args()
 
     if args.no_value_summaries:
@@ -207,7 +226,7 @@ def main():
                 if args.shuffle_options and ds != "sri_lankan":
                     shift = uid_shift(rec["uid"])
                     rec, _ = permute_record(rec, shift)
-                for key, stmt, is_correct, gold_text in targets_for(rec):
+                for key, stmt, is_correct, gold_text in targets_for(rec, args.si_mode):
                     if key in done:
                         continue
                     messages = build_messages(rec, mode="cot", si_statement=stmt,

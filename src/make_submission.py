@@ -76,7 +76,8 @@ def dev_priors(processed_dir):
 
 def decide(row, priors, args):
     """Averaged/raw details row -> final label, applying calibration once."""
-    if row["dataset"] == "sri_lankan":
+    # binary SI stores p_yes_A/p_yes_B; 4-way SI and all MCQ store a probs dict
+    if row["dataset"] == "sri_lankan" and "p_yes_A" in row:
         a = row["p_yes_A"] >= args.th_a
         b = row["p_yes_B"] >= args.th_b
         return "Both" if (a and b) else "A" if a else "B" if b else "0"
@@ -119,7 +120,8 @@ def average_details(paths):
 
 def run_predict(args):
     """GPU path: score every test item, checkpointing raw probs per item."""
-    from evaluate import Scorer, score_mcq, score_si, load_test_records
+    from evaluate import (Scorer, score_mcq, score_si, score_si_4way,
+                          load_test_records)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -136,7 +138,12 @@ def run_predict(args):
             todo = [r for r in recs if r["uid"] not in done]
             print(f"[{ds}] {len(todo)}/{len(recs)} items to score")
             for i, rec in enumerate(todo):
-                if ds == "sri_lankan":
+                if ds == "sri_lankan" and args.si_mode == "4way":
+                    # raw probs over {A,B,Both,0}; calibration at composition
+                    probs = score_si_4way(scorer, rec,
+                                          value_summaries=args.value_summaries)
+                    row = {"uid": rec["uid"], "dataset": ds, "probs": probs}
+                elif ds == "sri_lankan":
                     _, pa, pb = score_si(scorer, rec,
                                          value_summaries=args.value_summaries)
                     row = {"uid": rec["uid"], "dataset": ds,
@@ -230,8 +237,13 @@ def main():
     ap.add_argument("--n_perms", type=int, default=4)
     ap.add_argument("--prior_tau", type=float, default=0.0,
                     help="from tune_calibration.py (0 = off)")
-    ap.add_argument("--th_a", type=float, default=0.5)
-    ap.add_argument("--th_b", type=float, default=0.5)
+    ap.add_argument("--th_a", type=float, default=0.5,
+                    help="binary SI only: statement-A Yes cutoff")
+    ap.add_argument("--th_b", type=float, default=0.5,
+                    help="binary SI only: statement-B Yes cutoff")
+    ap.add_argument("--si_mode", choices=["binary", "4way"], default="binary",
+                    help="Sri Lankan scoring mode; must match the adapter's "
+                         "training --si_mode. '4way' ignores --th_a/--th_b.")
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--details", nargs="+", default=[],
                     help="compose mode: details files to (fold-)ensemble")

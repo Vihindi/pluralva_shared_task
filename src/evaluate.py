@@ -316,6 +316,32 @@ def score_si_gen(scorer, rec, threshold=0.5, value_summaries="auto",
     return label, p_yes["A"], p_yes["B"]
 
 
+# 4-way Sri Lankan labels (both statements shown, one label predicted).
+SI4_LABELS = ["A", "B", "Both", "0"]
+
+
+def score_si_4way(scorer, rec, prior=None, prior_tau=0.0, value_summaries="auto"):
+    """Constrained 4-way SI scoring -> dict label -> prob over {A,B,Both,0}."""
+    messages = build_messages(rec, mode="direct", value_summaries=value_summaries)
+    lps = scorer.score_candidates(messages, [f"Answer: {l}" for l in SI4_LABELS])
+    probs = dict(zip(SI4_LABELS, softmax(lps)))
+    if prior and prior_tau > 0:
+        probs = {k: v * (prior.get(k, 1e-9) ** prior_tau) for k, v in probs.items()}
+        z = sum(probs.values())
+        probs = {k: v / z for k, v in probs.items()}
+    return probs
+
+
+def score_si_4way_gen(scorer, rec, value_summaries="auto",
+                      max_new_tokens=1024, temperature=0.0):
+    """Generation-based 4-way SI scoring for thought-channel models."""
+    messages = build_messages(rec, mode="cot", value_summaries=value_summaries)
+    text = scorer.generate_text(messages, max_new_tokens=max_new_tokens,
+                                temperature=temperature)
+    ans = parse_generated_answer(text, SI4_LABELS)
+    return {l: (1.0 if l == ans else 0.0) for l in SI4_LABELS}
+
+
 def is_correct(rec, pred):
     if rec["dataset"] == "indonesian":
         return pred in set(rec["consensus"])
@@ -343,7 +369,19 @@ def run_eval(args, scorer):
         eval_recs = [r for r in recs if eval_folds is None or r["fold"] in eval_folds]
         n_ok = 0
         for i, rec in enumerate(eval_recs):
-            if ds == "sri_lankan":
+            if ds == "sri_lankan" and args.si_mode == "4way":
+                if args.generate:
+                    probs = score_si_4way_gen(
+                        scorer, rec, value_summaries=args.value_summaries,
+                        max_new_tokens=args.max_new_tokens,
+                        temperature=args.gen_temperature)
+                else:
+                    probs = score_si_4way(scorer, rec, prior=prior,
+                                          prior_tau=args.prior_tau,
+                                          value_summaries=args.value_summaries)
+                pred = max(probs, key=probs.get)
+                extra = {"probs": probs}
+            elif ds == "sri_lankan":
                 if args.generate:
                     pred, pa, pb = score_si_gen(
                         scorer, rec, threshold=args.si_threshold,
@@ -418,8 +456,14 @@ def run_predict(args, scorer):
         recs = load_test_records(path, ds)
         print(f"[{ds}] predicting {len(recs)} items from {path}")
         for i, rec in enumerate(recs):
-            if ds == "sri_lankan":
-                pred, _, _ = score_si(scorer, rec, threshold=args.si_threshold)
+            if ds == "sri_lankan" and args.si_mode == "4way":
+                probs = score_si_4way(scorer, rec, prior=dev_priors.get(ds),
+                                      prior_tau=args.prior_tau,
+                                      value_summaries=args.value_summaries)
+                pred = max(probs, key=probs.get)
+            elif ds == "sri_lankan":
+                pred, _, _ = score_si(scorer, rec, threshold=args.si_threshold,
+                                      value_summaries=args.value_summaries)
             else:
                 probs = score_mcq(scorer, rec, n_perms=args.n_perms,
                                   prior=dev_priors.get(ds), prior_tau=args.prior_tau,
@@ -451,7 +495,13 @@ def main():
                     help="cyclic option permutations to ensemble (ZH/ID)")
     ap.add_argument("--prior_tau", type=float, default=0.0,
                     help="0 = no prior calibration; try 0.25-1.0 on CV folds")
-    ap.add_argument("--si_threshold", type=float, default=0.5)
+    ap.add_argument("--si_threshold", type=float, default=0.5,
+                    help="binary SI only: Yes-probability cutoff per statement")
+    ap.add_argument("--si_mode", choices=["binary", "4way"], default="binary",
+                    help="Sri Lankan scoring: 'binary' (default) judges each "
+                         "statement Yes/No and composes A/B/Both/0; '4way' scores "
+                         "the four labels directly (both statements in one "
+                         "prompt). Must match the adapter's training --si_mode.")
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--trust_remote_code", action="store_true",
                     help="allow custom modeling code from the Hub repo (needed "

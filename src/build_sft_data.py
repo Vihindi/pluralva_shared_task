@@ -145,14 +145,21 @@ def build_indonesian(recs, rationales, n_perms, value_summaries="auto"):
     return out
 
 
-def build_sri_lankan(recs, rationales, value_summaries="auto"):
+def build_sri_lankan(recs, rationales, value_summaries="auto", si_mode="binary"):
     out = []
     for rec in recs:
-        for stmt, ok in (("A", rec["stmt_A_ok"]), ("B", rec["stmt_B_ok"])):
-            target = "Yes" if ok else "No"
-            key = f"{rec['uid']}_{stmt}"
-            out.append(make_example(rec, target, rationales, key, si_statement=stmt,
+        if si_mode == "4way":
+            # one example per item; target is the 4-way gold in {A,B,Both,0},
+            # si_statement=None -> both statements shown in one 4-way prompt
+            out.append(make_example(rec, rec["gold"], rationales, rec["uid"],
+                                    si_statement=None,
                                     value_summaries=value_summaries))
+        else:
+            for stmt, ok in (("A", rec["stmt_A_ok"]), ("B", rec["stmt_B_ok"])):
+                target = "Yes" if ok else "No"
+                key = f"{rec['uid']}_{stmt}"
+                out.append(make_example(rec, target, rationales, key, si_statement=stmt,
+                                        value_summaries=value_summaries))
     return out
 
 
@@ -185,6 +192,11 @@ def main():
     ap.add_argument("--no_value_summaries", action="store_true",
                     help="explicitly disable value-context injection (this is now "
                          "the default; kept for clarity/back-compat)")
+    ap.add_argument("--si_mode", choices=["binary", "4way"], default="binary",
+                    help="Sri Lankan target format: 'binary' (default) makes two "
+                         "Yes/No examples per item; '4way' makes one A/B/Both/0 "
+                         "example per item (both statements shown). Must match the "
+                         "--si_mode used for bootstrap_rationales.py and evaluate.py.")
     args = ap.parse_args()
     processed, out_dir = Path(args.processed_dir), Path(args.out_dir)
 
@@ -220,7 +232,7 @@ def main():
     builders = {
         "zh": ("chinese.jsonl", lambda recs: build_chinese(recs, rationales, args.n_perms, vs)),
         "id": ("indonesian.jsonl", lambda recs: build_indonesian(recs, rationales, args.n_perms, vs)),
-        "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(recs, rationales, vs)),
+        "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(recs, rationales, vs, args.si_mode)),
     }
     rng = random.Random(SEED)
     summary = {}
