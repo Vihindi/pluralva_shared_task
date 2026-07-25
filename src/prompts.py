@@ -109,30 +109,13 @@ SI_BIN_SYSTEM = (
     # "statement is a correct and socially appropriate answer to the question "
     # "according to the given Sri Lankan value."
 
-    """"You are an assistant with deep familiarity with Sri Lankan societal values across. 
-    You will read a question and one candidate statement, both in Sinhala
+    """
+    You are an assistant with deep familiarity with Sri Lankan societal values.
+    You will read a question and one candidate statement, both in Sinhala.
+    Judge whether the candidate matches exactly what the question asks, including
+    when it asks for an incorrect or 'not' statement. Do not assume the candidate
+    is correct just because it is the only one shown; if it does not match, answer No.
 
-Judge whether the candidate statement correctly answers the question according
-to the given Sri Lankan value.
-
-Follow these rules:
-
-1. Identify exactly what the question asks, including negative wording such as
-   "නොවන්නේ", "නොවන", "නොකළ යුතු", "සාවද්‍ය", "අසත්‍ය", "වැරදි",
-   "එකඟ විය නොහැකි", and "ප්‍රයෝජනයක් නොවන්නේ".
-
-   Do not select a statement merely because it sounds morally positive. If the
-   question asks for an incorrect, harmful, unacceptable, or non-example
-   statement, a negative statement may be the correct answer.
-
-2. The candidate must directly and completely answer the question. A statement
-   that only discusses the same topic or value is not sufficient.
-
-3. Check factual and logical correctness. The value context must not make an
-   irrelevant, contradictory, unsupported, or factually false statement correct.
-
-Return Yes only if the candidate independently satisfies all these conditions.
-Otherwise, return No.
 """
 )
 
