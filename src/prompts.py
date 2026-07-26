@@ -102,38 +102,38 @@ SI_VALUE_CONTEXT_BLOCK = """Value context — common patterns in how Sri Lankan 
 # exact English string. Only the surrounding descriptive text is translated.
 
 # --- English original (kept for reference / easy revert) -------------------
-SI_BIN_SYSTEM = (
-    # "You are an assistant with deep familiarity with Sri Lankan societal values "
-    # "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
-    # "question and one candidate statement, both in Sinhala. Judge whether the "
-    # "statement is a correct and socially appropriate answer to the question "
-    # "according to the given Sri Lankan value."
+# SI_BIN_SYSTEM = (
+#     # "You are an assistant with deep familiarity with Sri Lankan societal values "
+#     # "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
+#     # "question and one candidate statement, both in Sinhala. Judge whether the "
+#     # "statement is a correct and socially appropriate answer to the question "
+#     # "according to the given Sri Lankan value."
 
-    """
-You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
-Judge whether the statement is a correct , socially appropriate to the question according to the given Sri Lankan value.
+#     """
+# You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
+# Judge whether the statement is a correct , socially appropriate to the question according to the given Sri Lankan value.
 
-"""
-)
+# """
+# )
 
-SI_BIN_USER = """Value being tested: {value_english}
+# SI_BIN_USER = """Value being tested: {value_english}
 
-Question (Sinhala):
-{question}
+# Question (Sinhala):
+# {question}
 
-Candidate statement (Sinhala):
-{statement}
+# Candidate statement (Sinhala):
+# {statement}
 
-{instruction}"""
+# {instruction}"""
 
-SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
-                       "correct and appropriate answer to the question, or \"Answer: No\" "
-                       "if it is not.")
-SI_BIN_INSTR_COT = (
-    "First, briefly explain in English what the question asks and whether the "
-    "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
-    "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
-)
+# SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
+#                        "correct and appropriate answer to the question, or \"Answer: No\" "
+#                        "if it is not.")
+# SI_BIN_INSTR_COT = (
+#     "First, briefly explain in English what the question asks and whether the "
+#     "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
+#     "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
+# )
 
 # # --- Sinhala (active) --------------------------------------------------------
 # SI_BIN_SYSTEM = (
@@ -168,9 +168,10 @@ SI_BIN_INSTR_COT = (
 # ---------------------------------------------- Sri Lankan (4-way, baseline) -
 # --- English original (kept for reference / easy revert) -------------------
 SI_4WAY_SYSTEM = (
-    "You are an assistant with deep familiarity with Sri Lankan societal values. "
-    "You will read a question and two candidate statements in Sinhala. Decide "
-    "which statement(s) are correct answers according to the given value."
+    "You are a Sri Lankan. Answer based on Sri Lankan Sinhalese Buddhist "
+    "customs, traditions, culture, and social and societal norms. "
+    "Evaluate each statement independently against exactly what the question "
+    "asks. Follow the output rule strictly."
 )
 
 SI_4WAY_USER = """Value being tested: {value_english}
@@ -186,15 +187,23 @@ Statement B (Sinhala):
 
 {instruction}"""
 
-SI_4WAY_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: A\" (only A is correct), "
-                        "\"Answer: B\" (only B is correct), \"Answer: Both\", or "
-                        "\"Answer: 0\" (neither is correct).")
+_SI_4WAY_CHOICES = (
+    "Choose:\n"
+    "A = only A is correct\n"
+    "B = only B is correct\n"
+    "Both = both are correct\n"
+    "0 = neither is correct\n\n"
+    "Answer the exact question, including negative wording. Choose Both only if "
+    "each statement is independently correct.")
+
+SI_4WAY_INSTR_DIRECT = (
+    _SI_4WAY_CHOICES + " Reply with exactly one line, one of: "
+    "\"Answer: A\", \"Answer: B\", \"Answer: Both\", or \"Answer: 0\".")
+
 SI_4WAY_INSTR_COT = (
-    "First, briefly explain in English what the question asks and, for each "
-    "statement, whether it is a correct and value-consistent answer in a Sri "
-    "Lankan context (max 100 words). Then give your final judgment on the last "
-    "line as \"Answer: A\" (only A is correct), \"Answer: B\" (only B is "
-    "correct), \"Answer: Both\", or \"Answer: 0\" (neither is correct).")
+    _SI_4WAY_CHOICES + " First explain briefly in English (max 100 words), then "
+    "give your final judgment on the last line as one of: \"Answer: A\", "
+    "\"Answer: B\", \"Answer: Both\", or \"Answer: 0\".")
 
 # # --- Sinhala (active) --------------------------------------------------------
 # SI_4WAY_SYSTEM = (
