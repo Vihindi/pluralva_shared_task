@@ -236,7 +236,7 @@ def main():
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_8bit=True
         )
-        model_kwargs.pop("torch_dtype")
+        model_kwargs["torch_dtype"] = torch.float16
 
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
@@ -254,7 +254,7 @@ def main():
         )
     else:
         model.enable_input_require_grads()
-        
+
     peft_config = LoraConfig(
         r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
@@ -272,7 +272,8 @@ def main():
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
-        bf16=True,
+        bf16=not args.load_8bit,
+        fp16=args.load_8bit,
         logging_strategy=args.logging_strategy,
         logging_steps=args.logging_steps,
         save_strategy="steps" if args.save_steps > 0 else "epoch",
