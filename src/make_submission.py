@@ -25,12 +25,6 @@ Three ways to use it:
 3) Package an already-made predictions.jsonl (validate + zip only):
    python src/make_submission.py package --predictions predictions.jsonl
 
-4) Gemini zero-shot experiment (API, no GPU) — see predict_gemini_zeroshot.py:
-   python src/predict_gemini_zeroshot.py --out_dir submission_gemini
-   python src/make_submission.py package \
-       --predictions submission_gemini/predictions.jsonl \
-       --out_dir submission_gemini
-
 Every path ends with a strict validation: exact coverage of all test IDs
 (nothing missing, nothing extra, no duplicates), legal labels, exact key names.
 The zip contains predictions.jsonl at its root, as Codabench expects.

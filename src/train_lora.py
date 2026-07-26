@@ -129,7 +129,16 @@ def main():
     ap.add_argument("--batch_size", type=int, default=2)
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--max_len", type=int, default=1536)
-    ap.add_argument("--load_4bit", action="store_true", help="QLoRA (16-24GB GPUs)")
+    ap.add_argument(
+    "--load_4bit",
+    action="store_true",
+    help="Load the base model in 4-bit"
+    )
+    ap.add_argument(
+    "--load_8bit",
+    action="store_true",
+    help="Load the base model in 8-bit"
+    )
     ap.add_argument("--eval_fold", type=int, default=None,
                     help="hold out this single CV fold as the validation set for "
                          "loss curves; pass the *_train_full.jsonl files with this")
@@ -198,24 +207,54 @@ def main():
         eval_ds = Dataset.from_list(eval_feats)
         print(f"{len(eval_feats)} validation examples (held-out fold {args.eval_fold})")
 
-    model_kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
-                    "attn_implementation": "sdpa"}
+    if args.load_4bit and args.load_8bit:
+        raise ValueError(
+            "Choose only one quantization mode: "
+            "--load_4bit or --load_8bit"
+        )
+
+    model_kwargs = {
+        "torch_dtype": torch.bfloat16,
+        "device_map": "auto",
+        "attn_implementation": "sdpa",
+    }
+
     if args.load_4bit:
         from transformers import BitsAndBytesConfig
+
         model_kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True)
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
         model_kwargs.pop("torch_dtype")
-    model = AutoModelForCausalLM.from_pretrained(args.base_model, **model_kwargs)
+
+    elif args.load_8bit:
+        from transformers import BitsAndBytesConfig
+
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_8bit=True
+        )
+        model_kwargs.pop("torch_dtype")
+
+    model = AutoModelForCausalLM.from_pretrained(
+        args.base_model,
+        **model_kwargs
+    )
+
     model.config.use_cache = False
 
-    if args.load_4bit:
+    if args.load_4bit or args.load_8bit:
         from peft import prepare_model_for_kbit_training
-        model = prepare_model_for_kbit_training(
-            model, use_gradient_checkpointing=True)
-    else:
-        model.enable_input_require_grads()  # needed with gradient checkpointing
 
+        model = prepare_model_for_kbit_training(
+            model,
+            use_gradient_checkpointing=True,
+        )
+    else:
+        model.enable_input_require_grads()
+        
     peft_config = LoraConfig(
         r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
