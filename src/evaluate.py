@@ -114,18 +114,39 @@ def _merge_system_into_user(messages):
 
 
 class Scorer:
-    def __init__(self, model_name, adapter=None, load_4bit=False, batch_size=8,
+    def __init__(self, model_name, adapter=None, load_4bit=False,load_8bit=False, batch_size=8,
                  trust_remote_code=False, merge_system=False):
         self.merge_system = merge_system
         self.tok, self.processor = _load_tokenizer(model_name, trust_remote_code)
-        kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto",
-                  "trust_remote_code": trust_remote_code}
+        if load_4bit and load_8bit:
+            raise ValueError(
+                "Choose either load_4bit or load_8bit, not both."
+            )
+
+        kwargs = {
+            "torch_dtype": torch.bfloat16,
+            "device_map": "auto",
+            "trust_remote_code": trust_remote_code,
+        }
+
         if load_4bit:
             from transformers import BitsAndBytesConfig
+
             kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_quant_type="nf4")
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+            )
             kwargs.pop("torch_dtype")
+
+        elif load_8bit:
+            from transformers import BitsAndBytesConfig
+
+            kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_8bit=True,
+            )
+            kwargs["torch_dtype"] = torch.float16
         self.model = _load_lm(model_name, kwargs)
         if adapter:
             from peft import PeftModel
@@ -503,6 +524,7 @@ def main():
                          "the four labels directly (both statements in one "
                          "prompt). Must match the adapter's training --si_mode.")
     ap.add_argument("--load_4bit", action="store_true")
+    ap.add_argument("--load_8bit", action="store_true")
     ap.add_argument("--trust_remote_code", action="store_true",
                     help="allow custom modeling code from the Hub repo (needed "
                          "for e.g. jetmoe-8b); only enable for repos you trust")
@@ -559,7 +581,8 @@ def main():
         print("Indonesian value-context injection: AUTO "
               "(id_value_summaries.json at repo root)")
 
-    scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit,
+    scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit, load_8bit=args.load_8bit,
+
                     trust_remote_code=args.trust_remote_code,
                     merge_system=args.no_system)
     if args.mode == "eval":

@@ -131,7 +131,12 @@ def run_predict(args):
         done = {r["uid"] for r in load_jsonl(details_path)}
         print(f"resuming: {len(done)} items already scored")
 
-    scorer = Scorer(args.model, adapter=args.adapter, load_4bit=args.load_4bit)
+    scorer = Scorer(
+    args.model,
+    adapter=args.adapter,
+    load_4bit=args.load_4bit,
+    load_8bit=args.load_8bit,
+    )
     with open(details_path, "a", encoding="utf-8") as details:
         for ds, fname in TEST_FILES.items():
             recs = load_test_records(Path(args.test_dir) / fname, ds)
@@ -245,6 +250,7 @@ def main():
                     help="Sri Lankan scoring mode; must match the adapter's "
                          "training --si_mode. '4way' ignores --th_a/--th_b.")
     ap.add_argument("--load_4bit", action="store_true")
+    ap.add_argument("--load_8bit", action="store_true")
     ap.add_argument("--details", nargs="+", default=[],
                     help="compose mode: details files to (fold-)ensemble")
     ap.add_argument("--predictions", default=None,
@@ -260,6 +266,8 @@ def main():
                          "BEFORE this default was introduced, to avoid a prompt "
                          "mismatch)")
     args = ap.parse_args()
+    if args.load_4bit and args.load_8bit:
+        raise ValueError("Cannot use both --load_4bit and --load_8bit")
     if args.no_value_summaries:
         args.value_summaries = None
         print("value-context injection: DISABLED (--no_value_summaries)")
