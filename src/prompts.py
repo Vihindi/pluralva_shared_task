@@ -51,7 +51,7 @@ ID_SYSTEM = (
     "penilaian mayoritas masyarakat Indonesia terhadap nilai yang diuji."
 )
 
-ID_USER = """Nilai yang diuji: {value_native} ({value_english})
+ID_USER = """Nilai yang diuji: {value_native} 
 
 Skenario:
 {scenario}
@@ -101,39 +101,33 @@ SI_VALUE_CONTEXT_BLOCK = """Value context — common patterns in how Sri Lankan 
 # evaluate.py, self_consistency.py, and train_lora.py all parse/score that
 # exact English string. Only the surrounding descriptive text is translated.
 
-# --- English original (kept for reference / easy revert) -------------------
-# SI_BIN_SYSTEM = (
-#     # "You are an assistant with deep familiarity with Sri Lankan societal values "
-#     # "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read a "
-#     # "question and one candidate statement, both in Sinhala. Judge whether the "
-#     # "statement is a correct and socially appropriate answer to the question "
-#     # "according to the given Sri Lankan value."
+# --- English (active) -------------------------------------------------------
+SI_BIN_SYSTEM = (
+    "You are an assistant with deep familiarity with Sri Lankan societal values "
+    "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read "
+    "a question and one candidate statement, both in Sinhala. Judge whether the "
+    "statement is a correct and socially appropriate answer to the question "
+    "according to the given Sri Lankan value."
+)
 
-#     """
-# You are an assistant with deep familiarity with Sri Lankan societal values across. You will read a question and one candidate statement, both in Sinhala. 
-# Judge whether the statement is a correct , socially appropriate to the question according to the given Sri Lankan value.
+SI_BIN_USER = """Value being tested: {value_english}
 
-# """
-# )
+Question (Sinhala):
+{question}
 
-# SI_BIN_USER = """Value being tested: {value_english}
+Candidate statement (Sinhala):
+{statement}
 
-# Question (Sinhala):
-# {question}
+{instruction}"""
 
-# Candidate statement (Sinhala):
-# {statement}
-
-# {instruction}"""
-
-# SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
-#                        "correct and appropriate answer to the question, or \"Answer: No\" "
-#                        "if it is not.")
-# SI_BIN_INSTR_COT = (
-#     "First, briefly explain in English what the question asks and whether the "
-#     "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
-#     "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
-# )
+SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
+                       "correct and appropriate answer to the question, or \"Answer: No\" "
+                       "if it is not.")
+SI_BIN_INSTR_COT = (
+    "First, briefly explain in English what the question asks and whether the "
+    "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
+    "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
+)
 
 # # --- Sinhala (active) --------------------------------------------------------
 # SI_BIN_SYSTEM = (

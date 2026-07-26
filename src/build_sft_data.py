@@ -129,19 +129,62 @@ def build_chinese(recs, rationales, n_perms, value_summaries="auto"):
     return out
 
 
-def build_indonesian(recs, rationales, n_perms, value_summaries="auto"):
+def load_reviewed_labels(path):
+    """Load indonesian_72_reviewed_labels.jsonl -> {ID: {reviewed_label,
+    use_in_main_sft, ...}}. These are the 72 tied dev items with a human-picked
+    single label."""
+    d = {}
+    for r in load_jsonl(Path(path)):
+        d[r["ID"]] = r
+    return d
+
+
+def id_majority_gold(rec, reviewed):
+    """Single hard gold for an Indonesian item under 'majority' mode.
+
+    - clear majority (consensus set size 1): that label.
+    - tied (size 2): the human reviewed_label; None if the reviewer flagged it
+      use_in_main_sft=false (genuinely ambiguous -> exclude the item).
+    Falls back to the representative consensus label if a tie somehow isn't in
+    the reviewed file (shouldn't happen: all 72 ties are covered)."""
+    cons = rec["consensus"]
+    if len(cons) == 1:
+        return cons[0]
+    rev = reviewed.get(rec["uid"]) if reviewed else None
+    if rev is None:
+        return cons[0]
+    if not rev.get("use_in_main_sft", True):
+        return None
+    return rev["reviewed_label"]
+
+
+def build_indonesian(recs, rationales, n_perms, value_summaries="auto",
+                     id_mode="probability", reviewed=None):
     out = []
     for rec in recs:
-        for shift in shifts_for(rationales, rec["uid"], n_perms):
-            p, _ = permute_record(rec, shift)
-            key = rationale_key_for(rationales, rec["uid"], shift)
-            # vote-expansion: one example per annotator vote == soft-label CE
-            for vote in p["votes"]:
-                # a rationale argues for one answer; never pair it with a
-                # different vote's target letter
-                vote_key = key if (key and rationales[key]["answer"] == vote) else None
-                out.append(make_example(p, vote, rationales, vote_key,
+        if id_mode == "majority":
+            # one hard-label example per item; ties resolved by human review
+            gold = id_majority_gold(rec, reviewed)
+            if gold is None:
+                continue  # ambiguous item excluded from training
+            rec_g = dict(rec, gold=gold)  # so permute_record remaps the label
+            for shift in shifts_for(rationales, rec["uid"], n_perms):
+                p, _ = permute_record(rec_g, shift)
+                key = rationale_key_for(rationales, rec["uid"], shift)
+                rkey = key if (key and rationales[key]["answer"] == p["gold"]) else None
+                out.append(make_example(p, p["gold"], rationales, rkey,
                                         value_summaries=value_summaries))
+        else:
+            for shift in shifts_for(rationales, rec["uid"], n_perms):
+                p, _ = permute_record(rec, shift)
+                key = rationale_key_for(rationales, rec["uid"], shift)
+                # vote-expansion: one example per annotator vote == soft-label CE
+                for vote in p["votes"]:
+                    # a rationale argues for one answer; never pair it with a
+                    # different vote's target letter
+                    vote_key = key if (key and rationales[key]["answer"] == vote) else None
+                    out.append(make_example(p, vote, rationales, vote_key,
+                                            value_summaries=value_summaries))
     return out
 
 
@@ -197,6 +240,17 @@ def main():
                          "Yes/No examples per item; '4way' makes one A/B/Both/0 "
                          "example per item (both statements shown). Must match the "
                          "--si_mode used for bootstrap_rationales.py and evaluate.py.")
+    ap.add_argument("--id_mode", choices=["probability", "majority"],
+                    default="probability",
+                    help="Indonesian target construction: 'probability' (default) "
+                         "= vote-expansion (one example per annotator vote, keeps "
+                         "the 5-vote soft label / consensus ties). 'majority' = one "
+                         "hard-label example per item; the 72 tied items are "
+                         "resolved by --id_reviewed_labels and the 3 flagged "
+                         "ambiguous ones are dropped.")
+    ap.add_argument("--id_reviewed_labels", default=None,
+                    help="path to indonesian_72_reviewed_labels.jsonl; required "
+                         "when --id_mode majority.")
     args = ap.parse_args()
     processed, out_dir = Path(args.processed_dir), Path(args.out_dir)
 
@@ -228,10 +282,22 @@ def main():
             print(f"  loaded {len(rationales) - n_before} rationales from {rat_path!r}")
         print(f"loaded {len(rationales)} rationales total")
 
+    reviewed = None
+    if args.id_mode == "majority":
+        if not args.id_reviewed_labels:
+            raise SystemExit("--id_mode majority requires --id_reviewed_labels "
+                             "(indonesian_72_reviewed_labels.jsonl)")
+        reviewed = load_reviewed_labels(args.id_reviewed_labels)
+        n_excl = sum(1 for r in reviewed.values() if not r.get("use_in_main_sft", True))
+        print(f"Indonesian mode: MAJORITY (loaded {len(reviewed)} reviewed ties, "
+              f"{n_excl} flagged ambiguous -> excluded)")
+    else:
+        print("Indonesian mode: PROBABILITY (vote-expansion / consensus)")
+
     vs = args.value_summaries
     builders = {
         "zh": ("chinese.jsonl", lambda recs: build_chinese(recs, rationales, args.n_perms, vs)),
-        "id": ("indonesian.jsonl", lambda recs: build_indonesian(recs, rationales, args.n_perms, vs)),
+        "id": ("indonesian.jsonl", lambda recs: build_indonesian(recs, rationales, args.n_perms, vs, args.id_mode, reviewed)),
         "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(recs, rationales, vs, args.si_mode)),
     }
     rng = random.Random(SEED)

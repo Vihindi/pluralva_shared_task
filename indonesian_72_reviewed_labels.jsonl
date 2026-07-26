@@ -1,0 +1,72 @@
+{"ID":"ID_28","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_47","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_108","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_152","original_tied_answers":["B","D"],"reviewed_label":"B","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_156","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_188","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_248","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_322","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_343","original_tied_answers":["C","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_354","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_358","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_386","original_tied_answers":["A","B"],"reviewed_label":"B","confidence":"Low","resolution":"Genuinely ambiguous","use_in_main_sft":false}
+{"ID":"ID_393","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_414","original_tied_answers":["B","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_429","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_446","original_tied_answers":["B","D"],"reviewed_label":"B","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_450","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_461","original_tied_answers":["B","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_467","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_509","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_565","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_570","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_575","original_tied_answers":["A","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_582","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_592","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_593","original_tied_answers":["C","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_597","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_603","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_606","original_tied_answers":["A","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_610","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_619","original_tied_answers":["B","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_703","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_718","original_tied_answers":["A","D"],"reviewed_label":"D","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_746","original_tied_answers":["C","D"],"reviewed_label":"D","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_837","original_tied_answers":["C","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_841","original_tied_answers":["B","D"],"reviewed_label":"D","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_930","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_949","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_969","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1020","original_tied_answers":["B","D"],"reviewed_label":"B","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_1047","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1050","original_tied_answers":["B","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1124","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1139","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1140","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1159","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_1181","original_tied_answers":["C","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1205","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_1247","original_tied_answers":["C","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1251","original_tied_answers":["A","B"],"reviewed_label":"B","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1279","original_tied_answers":["B","C"],"reviewed_label":"B","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1281","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1365","original_tied_answers":["B","C"],"reviewed_label":"B","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_1409","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"Low","resolution":"Genuinely ambiguous","use_in_main_sft":false}
+{"ID":"ID_1431","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1464","original_tied_answers":["B","C"],"reviewed_label":"B","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_1474","original_tied_answers":["B","D"],"reviewed_label":"B","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1489","original_tied_answers":["A","B"],"reviewed_label":"B","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1549","original_tied_answers":["A","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1793","original_tied_answers":["A","C"],"reviewed_label":"A","confidence":"Low","resolution":"Genuinely ambiguous","use_in_main_sft":false}
+{"ID":"ID_1817","original_tied_answers":["A","D"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1822","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1825","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1830","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1838","original_tied_answers":["A","B"],"reviewed_label":"B","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1875","original_tied_answers":["B","C"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1908","original_tied_answers":["B","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_1961","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_2000","original_tied_answers":["A","C"],"reviewed_label":"C","confidence":"Medium","resolution":"Defensible lean","use_in_main_sft":true}
+{"ID":"ID_2011","original_tied_answers":["A","D"],"reviewed_label":"D","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_2015","original_tied_answers":["A","B"],"reviewed_label":"A","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}
+{"ID":"ID_2058","original_tied_answers":["C","D"],"reviewed_label":"C","confidence":"High","resolution":"Straightforward","use_in_main_sft":true}

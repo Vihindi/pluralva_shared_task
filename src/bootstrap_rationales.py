@@ -25,7 +25,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from prompts import build_messages
-from build_sft_data import permute_record
+from build_sft_data import permute_record, load_reviewed_labels, id_majority_gold
 
 ROOT = Path(__file__).resolve().parent.parent
 # Matches every label across all tasks: MCQ (A-D), binary SI (Yes/No), and
@@ -111,18 +111,27 @@ def rationalize_messages(messages, gold_text):
     return msgs
 
 
-def targets_for(rec, si_mode="binary"):
+def targets_for(rec, si_mode="binary", id_mode="probability", reviewed=None):
     """Yield (key, si_statement, is_correct(ans)->bool, gold_text).
 
     si_statement is passed straight to build_messages: "A"/"B" -> binary SI
     prompt for that statement; None -> 4-way SI prompt (both statements shown).
+    id_mode: 'probability' keeps a chain correct if it lands in the consensus
+    set (either tied label); 'majority' requires the single resolved label and
+    skips items the reviewer flagged ambiguous.
     """
     ds = rec["dataset"]
     if ds == "chinese":
         yield rec["uid"], None, (lambda a, g=rec["gold"]: a == g), rec["gold"]
     elif ds == "indonesian":
-        cons = set(rec["consensus"])
-        yield rec["uid"], None, (lambda a, c=cons: a in c), rec["consensus"][0]
+        if id_mode == "majority":
+            gold = id_majority_gold(rec, reviewed)
+            if gold is None:
+                return  # ambiguous item -> no rationale generated
+            yield rec["uid"], None, (lambda a, g=gold: a == g), gold
+        else:
+            cons = set(rec["consensus"])
+            yield rec["uid"], None, (lambda a, c=cons: a in c), rec["consensus"][0]
     elif si_mode == "4way":  # one target per item, gold in {A,B,Both,0}
         g = rec["gold"]
         yield rec["uid"], None, (lambda a, g=g: a == g), g
@@ -170,7 +179,24 @@ def main():
                          "one Yes/No rationale per statement (keys uid_A, uid_B); "
                          "'4way' writes one A/B/Both/0 rationale per item (key "
                          "uid). Must match build_sft_data.py --si_mode.")
+    ap.add_argument("--id_mode", choices=["probability", "majority"],
+                    default="probability",
+                    help="Indonesian rationale target: 'probability' (default) "
+                         "keeps a chain correct if it lands in the consensus set; "
+                         "'majority' requires the single resolved label (ties via "
+                         "--id_reviewed_labels) and skips flagged-ambiguous items. "
+                         "Must match build_sft_data.py --id_mode.")
+    ap.add_argument("--id_reviewed_labels", default=None,
+                    help="path to indonesian_72_reviewed_labels.jsonl; required "
+                         "when --id_mode majority.")
     args = ap.parse_args()
+
+    reviewed = None
+    if args.id_mode == "majority":
+        if not args.id_reviewed_labels:
+            raise SystemExit("--id_mode majority requires --id_reviewed_labels")
+        reviewed = load_reviewed_labels(args.id_reviewed_labels)
+        print(f"Indonesian rationale mode: MAJORITY ({len(reviewed)} reviewed ties)")
 
     if args.no_value_summaries:
         args.value_summaries = None
@@ -226,7 +252,8 @@ def main():
                 if args.shuffle_options and ds != "sri_lankan":
                     shift = uid_shift(rec["uid"])
                     rec, _ = permute_record(rec, shift)
-                for key, stmt, is_correct, gold_text in targets_for(rec, args.si_mode):
+                for key, stmt, is_correct, gold_text in targets_for(
+                        rec, args.si_mode, args.id_mode, reviewed):
                     if key in done:
                         continue
                     messages = build_messages(rec, mode="cot", si_statement=stmt,
