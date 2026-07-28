@@ -33,10 +33,89 @@ from pathlib import Path
 import torch
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model
-from transformers import (AutoModelForCausalLM, AutoTokenizer, Trainer,
-                          TrainerCallback, TrainingArguments)
+from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
+                          Trainer, TrainerCallback, TrainingArguments)
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# Architecture name fragments that indicate a multimodal/VLM checkpoint (e.g.
+# Qwen3.5's "Qwen3_5ForConditionalGeneration") rather than a plain text
+# AutoModelForCausalLM. Extend this list as new families show up.
+_MULTIMODAL_ARCH_HINTS = ("ConditionalGeneration", "ForVision2Seq", "VLFor")
+
+
+def is_multimodal_checkpoint(base_model):
+    """Best-effort detection from config.json alone (no weights downloaded
+    yet): true if the declared architecture or presence of vision_config
+    indicates a vision-language checkpoint rather than a plain text LM."""
+    try:
+        cfg = AutoConfig.from_pretrained(base_model, trust_remote_code=False)
+    except Exception:
+        return False  # unreadable config -> assume plain text LM, let the
+                      # normal AutoModelForCausalLM path raise if that's wrong
+    archs = getattr(cfg, "architectures", None) or []
+    if any(hint in a for a in archs for hint in _MULTIMODAL_ARCH_HINTS):
+        return True
+    return hasattr(cfg, "vision_config")
+
+
+def load_tokenizer(base_model, multimodal):
+    """AutoTokenizer for plain text LMs; AutoProcessor's .tokenizer for
+    multimodal checkpoints (falls back to AutoTokenizer if that also works)."""
+    if not multimodal:
+        return AutoTokenizer.from_pretrained(base_model)
+    try:
+        from transformers import AutoProcessor
+        return AutoProcessor.from_pretrained(base_model).tokenizer
+    except Exception:
+        return AutoTokenizer.from_pretrained(base_model)
+
+
+def load_base_model(base_model, model_kwargs, multimodal):
+    """AutoModelForCausalLM for plain text LMs; AutoModelForMultimodalLM for
+    multimodal checkpoints like Qwen3.5 (used purely as a text backbone here —
+    we only ever train on input_ids/attention_mask/labels, no pixel_values)."""
+    if not multimodal:
+        return AutoModelForCausalLM.from_pretrained(base_model, **model_kwargs)
+
+    print(f"{base_model!r} looks like a multimodal checkpoint "
+         f"(architecture/vision_config detected) -> loading via "
+         f"AutoModelForMultimodalLM, text-only usage.")
+    try:
+        from transformers import AutoModelForMultimodalLM
+    except ImportError as e:
+        raise SystemExit(
+            f"{base_model!r} requires AutoModelForMultimodalLM, which isn't "
+            f"in your installed transformers version ({e}). Qwen's own model "
+            f"card says this needs the git-main build:\n"
+            f"  pip install -U git+https://github.com/huggingface/transformers"
+        ) from e
+    return AutoModelForMultimodalLM.from_pretrained(base_model, **model_kwargs)
+
+
+def find_lora_target_modules(model, exclude_substrings=("vision", "visual")):
+    """Discover Linear (incl. bitsandbytes-quantized) leaf module names to
+    LoRA-adapt, instead of a hardcoded list tied to one architecture. Works
+    unchanged for dense models (recovers the usual q/k/v/o/gate/up/down set)
+    and for hybrid/linear-attention architectures like Qwen3.5, whose exact
+    internal projection names we don't hardcode-guess. lm_head and anything
+    under a path containing exclude_substrings (default: the vision tower, so
+    a multimodal checkpoint is only ever text-adapted here) are skipped."""
+    names = set()
+    for full_name, module in model.named_modules():
+        cls_name = module.__class__.__name__
+        if "Linear" not in cls_name:  # nn.Linear, bnb Linear4bit/Linear8bitLt, ...
+            continue
+        leaf = full_name.split(".")[-1]
+        if leaf == "lm_head":
+            continue
+        if any(s in full_name.lower() for s in exclude_substrings):
+            continue
+        names.add(leaf)
+    if not names:
+        raise SystemExit("find_lora_target_modules found no Linear layers to "
+                         "adapt — inspect the model structure manually.")
+    return sorted(names)
 
 
 class EpochLossCallback(TrainerCallback):
@@ -165,7 +244,8 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
-    tok = AutoTokenizer.from_pretrained(args.base_model)
+    multimodal = is_multimodal_checkpoint(args.base_model)
+    tok = load_tokenizer(args.base_model, multimodal)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
 
@@ -238,10 +318,7 @@ def main():
         )
         model_kwargs["torch_dtype"] = torch.float16
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.base_model,
-        **model_kwargs
-    )
+    model = load_base_model(args.base_model, model_kwargs, multimodal)
 
     model.config.use_cache = False
 
@@ -255,10 +332,12 @@ def main():
     else:
         model.enable_input_require_grads()
 
+    target_modules = find_lora_target_modules(model)
+    print(f"LoRA target modules ({len(target_modules)} discovered): "
+         f"{target_modules}")
     peft_config = LoraConfig(
         r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
+        target_modules=target_modules,
         task_type="CAUSAL_LM")
     model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
