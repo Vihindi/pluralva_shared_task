@@ -236,6 +236,9 @@ def main():
     ap.add_argument("--lora_dropout", type=float, default=0.05)
     ap.add_argument("--epochs", type=float, default=2.0)
     ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--warmup_ratio", type=float, default=0.03,
+                    help="fraction of total steps spent ramping the LR from 0 "
+                         "to --lr before cosine decay begins (default 0.03)")
     ap.add_argument("--batch_size", type=int, default=2)
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--max_len", type=int, default=1536)
@@ -377,7 +380,7 @@ def main():
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
-        warmup_ratio=0.03,
+        warmup_ratio=args.warmup_ratio,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
