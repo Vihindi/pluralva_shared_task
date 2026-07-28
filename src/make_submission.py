@@ -4,7 +4,7 @@ Produces submission/predictions.jsonl + submission/predictions.zip in the
 required format: {"dataset": ..., "id": ..., "LLM_Output": ...} per line,
 LLM_Output in {A,B,C,D} for chinese/indonesian and {A,B,Both,0} for sri_lankan.
 
-Three ways to use it:
+Four ways to use it:
 
 1) Predict with one model/adapter (GPU; resumable — reruns skip finished items):
    python src/make_submission.py predict \
@@ -16,13 +16,21 @@ Three ways to use it:
    it resumes. Calibration (--prior_tau/--th_a/--th_b, from tune_calibration.py)
    is applied at composition time from the saved raw probs.
 
-2) Compose from existing details (no GPU) — e.g. the 5 fold-adapter runs made
+2) Predict with three routed country adapters (one shared base-model load):
+   python src/make_submission.py predict \
+       --model Qwen/Qwen3.5-4B --country_specific \
+       --zh_adapter runs/country_lora/qwen35_4b_full/chinese \
+       --id_adapter runs/country_lora/qwen35_4b_full/indonesian \
+       --si_adapter runs/country_lora/qwen35_4b_full/sri_lankan \
+       --n_perms 4 --load_4bit
+
+3) Compose from existing details (no GPU) — e.g. the 5 fold-adapter runs made
    with evaluate.py predict (their <out>.details.jsonl files), fold-ensembled:
    python src/make_submission.py compose \
        --details pred_fold0.jsonl.details.jsonl ... pred_fold4.jsonl.details.jsonl \
        --prior_tau 0.5 --th_a 0.5 --th_b 0.5
 
-3) Package an already-made predictions.jsonl (validate + zip only):
+4) Package an already-made predictions.jsonl (validate + zip only):
    python src/make_submission.py package --predictions predictions.jsonl
 
 Every path ends with a strict validation: exact coverage of all test IDs
@@ -131,14 +139,25 @@ def run_predict(args):
         done = {r["uid"] for r in load_jsonl(details_path)}
         print(f"resuming: {len(done)} items already scored")
 
+    country_adapters = None
+    if args.country_specific:
+        country_adapters = {
+            "chinese": args.zh_adapter,
+            "indonesian": args.id_adapter,
+            "sri_lankan": args.si_adapter,
+        }
     scorer = Scorer(
-    args.model,
-    adapter=args.adapter,
-    load_4bit=args.load_4bit,
-    load_8bit=args.load_8bit,
+        args.model,
+        adapter=args.adapter,
+        adapters=country_adapters,
+        load_4bit=args.load_4bit,
+        load_8bit=args.load_8bit,
     )
     with open(details_path, "a", encoding="utf-8") as details:
         for ds, fname in TEST_FILES.items():
+            if args.country_specific:
+                scorer.set_adapter(ds)
+                print(f"[{ds}] active adapter: {country_adapters[ds]}")
             recs = load_test_records(Path(args.test_dir) / fname, ds)
             todo = [r for r in recs if r["uid"] not in done]
             print(f"[{ds}] {len(todo)}/{len(recs)} items to score")
@@ -236,6 +255,15 @@ def main():
     ap.add_argument("mode", choices=["predict", "compose", "package"])
     ap.add_argument("--model", default="Qwen/Qwen3-8B")
     ap.add_argument("--adapter", default=None)
+    ap.add_argument("--country_specific", action="store_true",
+                    help="predict with separate Chinese, Indonesian, and Sri "
+                         "Lankan adapters; requires all three adapter paths")
+    ap.add_argument("--zh_adapter", default=None,
+                    help="Chinese adapter path for --country_specific")
+    ap.add_argument("--id_adapter", default=None,
+                    help="Indonesian adapter path for --country_specific")
+    ap.add_argument("--si_adapter", default=None,
+                    help="Sri Lankan binary adapter path for --country_specific")
     ap.add_argument("--test_dir", default=str(ROOT / "PlurVA-LLM_Test_Set"))
     ap.add_argument("--processed_dir", default=str(ROOT / "processed"))
     ap.add_argument("--out_dir", default=str(ROOT / "submission"))
@@ -268,6 +296,33 @@ def main():
     args = ap.parse_args()
     if args.load_4bit and args.load_8bit:
         raise ValueError("Cannot use both --load_4bit and --load_8bit")
+    country_paths = {
+        "--zh_adapter": args.zh_adapter,
+        "--id_adapter": args.id_adapter,
+        "--si_adapter": args.si_adapter,
+    }
+    if args.country_specific:
+        if args.mode != "predict":
+            raise ValueError("--country_specific is only valid in predict mode")
+        if args.adapter:
+            raise ValueError(
+                "--adapter and --country_specific are mutually exclusive")
+        missing = [flag for flag, path in country_paths.items() if not path]
+        if missing:
+            raise ValueError(
+                "--country_specific requires " + ", ".join(missing))
+        nonexistent = [f"{flag}={path}" for flag, path in country_paths.items()
+                       if not Path(path).exists()]
+        if nonexistent:
+            raise FileNotFoundError(
+                "country adapter path(s) not found: " + ", ".join(nonexistent))
+        if args.si_mode != "binary":
+            raise ValueError(
+                "--country_specific requires --si_mode binary because the "
+                "Sri Lankan adapter uses statement-level Yes/No training")
+    elif any(country_paths.values()):
+        raise ValueError(
+            "--zh_adapter/--id_adapter/--si_adapter require --country_specific")
     if args.no_value_summaries:
         args.value_summaries = None
         print("value-context injection: DISABLED (--no_value_summaries)")

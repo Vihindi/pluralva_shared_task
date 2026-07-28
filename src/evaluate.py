@@ -114,10 +114,13 @@ def _merge_system_into_user(messages):
 
 
 class Scorer:
-    def __init__(self, model_name, adapter=None, load_4bit=False,load_8bit=False, batch_size=8,
-                 trust_remote_code=False, merge_system=False):
+    def __init__(self, model_name, adapter=None, load_4bit=False,
+                 load_8bit=False, batch_size=8, trust_remote_code=False,
+                 merge_system=False, adapters=None):
         self.merge_system = merge_system
         self.tok, self.processor = _load_tokenizer(model_name, trust_remote_code)
+        if adapter and adapters:
+            raise ValueError("pass either adapter or adapters, not both")
         if load_4bit and load_8bit:
             raise ValueError(
                 "Choose either load_4bit or load_8bit, not both."
@@ -148,11 +151,35 @@ class Scorer:
             )
             kwargs["torch_dtype"] = torch.float16
         self.model = _load_lm(model_name, kwargs)
-        if adapter:
+        self.available_adapters = set()
+        if adapters:
+            if not isinstance(adapters, dict) or not adapters:
+                raise ValueError("adapters must be a non-empty name -> path mapping")
+            from peft import PeftModel
+            items = list(adapters.items())
+            first_name, first_path = items[0]
+            self.model = PeftModel.from_pretrained(
+                self.model, first_path, adapter_name=first_name)
+            self.available_adapters.add(first_name)
+            for adapter_name, adapter_path in items[1:]:
+                self.model.load_adapter(
+                    adapter_path, adapter_name=adapter_name)
+                self.available_adapters.add(adapter_name)
+            self.model.set_adapter(first_name)
+        elif adapter:
             from peft import PeftModel
             self.model = PeftModel.from_pretrained(self.model, adapter)
+            self.available_adapters.add("default")
         self.model.eval()
         self.batch_size = batch_size
+
+    def set_adapter(self, adapter_name):
+        """Activate one already-loaded adapter for subsequent homogeneous work."""
+        if adapter_name not in self.available_adapters:
+            raise ValueError(
+                f"adapter {adapter_name!r} is not loaded; available: "
+                f"{sorted(self.available_adapters)}")
+        self.model.set_adapter(adapter_name)
 
     @staticmethod
     def _templater_call(obj, messages, enable_thinking, **kwargs):
