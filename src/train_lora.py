@@ -93,6 +93,37 @@ def load_base_model(base_model, model_kwargs, multimodal):
     return AutoModelForMultimodalLM.from_pretrained(base_model, **model_kwargs)
 
 
+# The 7 projections shared by all standard dense transformers (Llama-3.x,
+# Qwen3-8B/4B, Mistral, ...). These are the ONLY modules LoRA adapts here, for
+# every model. On a hybrid model like Qwen3.5 that deliberately leaves the
+# linear-attention projections (in_proj_*/out_proj) unadapted — only the
+# full-attention and MLP layers are trained.
+TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj",
+                  "gate_proj", "up_proj", "down_proj"]
+
+
+def resolve_target_modules(model):
+    """Always the fixed 7 dense projections, intersected with what this model
+    actually has (so a missing name can't silently break LoraConfig). Reports
+    any adaptable modules that are being skipped, e.g. Qwen3.5's
+    linear-attention projections."""
+    present = find_lora_target_modules(model)
+    chosen = [m for m in TARGET_MODULES if m in present]
+    missing = [m for m in TARGET_MODULES if m not in present]
+    if missing:
+        print(f"  WARNING: these standard modules aren't in this model, "
+              f"skipping: {missing}")
+    skipped = [m for m in present if m not in chosen]
+    if skipped:
+        print(f"  note: not adapting {len(skipped)} other module(s) this "
+              f"model has: {skipped}")
+    if not chosen:
+        raise SystemExit(
+            f"none of {TARGET_MODULES} exist in this model — its projections "
+            f"are named: {present}")
+    return chosen
+
+
 def find_lora_target_modules(model, exclude_substrings=("vision", "visual")):
     """Discover Linear (incl. bitsandbytes-quantized) leaf module names to
     LoRA-adapt, instead of a hardcoded list tied to one architecture. Works
@@ -204,7 +235,7 @@ def main():
     ap.add_argument("--lora_alpha", type=int, default=32)
     ap.add_argument("--lora_dropout", type=float, default=0.05)
     ap.add_argument("--epochs", type=float, default=2.0)
-    ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument("--lr", type=float, default=1e-5)
     ap.add_argument("--batch_size", type=int, default=2)
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--max_len", type=int, default=1536)
@@ -332,9 +363,8 @@ def main():
     else:
         model.enable_input_require_grads()
 
-    target_modules = find_lora_target_modules(model)
-    print(f"LoRA target modules ({len(target_modules)} discovered): "
-         f"{target_modules}")
+    target_modules = resolve_target_modules(model)
+    print(f"LoRA target modules ({len(target_modules)}): {target_modules}")
     peft_config = LoraConfig(
         r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
         target_modules=target_modules,
