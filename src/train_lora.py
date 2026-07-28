@@ -235,7 +235,7 @@ def main():
     ap.add_argument("--lora_alpha", type=int, default=32)
     ap.add_argument("--lora_dropout", type=float, default=0.05)
     ap.add_argument("--epochs", type=float, default=2.0)
-    ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--warmup_ratio", type=float, default=0.03,
                     help="fraction of total steps spent ramping the LR from 0 "
                          "to --lr before cosine decay begins (default 0.03)")
