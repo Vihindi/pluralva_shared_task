@@ -21,10 +21,14 @@ Per methodology §2.4:
 Outputs (out_dir, default sft_data/):
   {zh|id|si}_train_fold{k}.jsonl  — training split excluding CV fold k (k=0..4)
   {zh|id|si}_train_full.jsonl     — all dev data (for the final submission model)
+Additional output:
+  zh_train_remaining_permutations.jsonl - the 20 non-cyclic members of each
+                                          Chinese question's complete 4! set
 Each line: {"messages":[{system},{user},{assistant}], "meta":{...}}
 Joint multi-country training = pass several files to train_lora.py.
 """
 import argparse
+import itertools
 import json
 import random
 from pathlib import Path
@@ -38,6 +42,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # cyclic shifts: position i shows the option that was at (i+s) mod 4
 CYCLIC_SHIFTS = [0, 1, 2, 3]
+CYCLIC_ORDERS = {
+    tuple(LETTERS4[(i + shift) % 4] for i in range(4))
+    for shift in CYCLIC_SHIFTS
+}
+REMAINING_ORDERS = [
+    order for order in itertools.permutations(LETTERS4)
+    if order not in CYCLIC_ORDERS
+]
 
 
 def load_jsonl(path):
@@ -52,19 +64,14 @@ def save_jsonl(records, path):
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
 
-def permute_record(rec, shift):
-    """Return a copy of rec with options cyclically shifted and labels remapped.
-
-    New position i (letter LETTERS4[i]) holds the option originally at letter
-    LETTERS4[(i+shift) % 4]. old_letter -> new_letter map inverts that.
-    """
-    if shift == 0:
-        return dict(rec), {ltr: ltr for ltr in LETTERS4}
+def permute_record_order(rec, order):
+    """Return a copy whose new A/B/C/D positions contain ``order`` old labels."""
+    if sorted(order) != LETTERS4:
+        raise ValueError(f"invalid four-option permutation: {order}")
     new = dict(rec)
     new_options = {}
     old_to_new = {}
-    for i, new_ltr in enumerate(LETTERS4):
-        old_ltr = LETTERS4[(i + shift) % 4]
+    for new_ltr, old_ltr in zip(LETTERS4, order):
         new_options[new_ltr] = rec["options"][old_ltr]
         old_to_new[old_ltr] = new_ltr
     new["options"] = new_options
@@ -76,8 +83,18 @@ def permute_record(rec, shift):
     return new, old_to_new
 
 
+def permute_record(rec, shift):
+    """Return a copy of rec with options cyclically shifted and labels remapped.
+
+    New position i (letter LETTERS4[i]) holds the option originally at letter
+    LETTERS4[(i+shift) % 4]. old_letter -> new_letter map inverts that.
+    """
+    order = tuple(LETTERS4[(i + shift) % 4] for i in range(4))
+    return permute_record_order(rec, order)
+
+
 def make_example(rec, target_letter, rationales, rationale_key, si_statement=None,
-                 value_summaries="auto"):
+                 value_summaries="auto", meta_extra=None):
     messages = build_messages(rec, mode="direct", si_statement=si_statement,
                               value_summaries=value_summaries)
     rat = rationales.get(rationale_key)
@@ -88,10 +105,13 @@ def make_example(rec, target_letter, rationales, rationale_key, si_statement=Non
         messages = msgs
     else:
         assistant = f"Answer: {target_letter}"
+    meta = {"uid": rec["uid"], "dataset": rec["dataset"],
+            "fold": rec["fold"], "with_rationale": bool(rat)}
+    if meta_extra:
+        meta.update(meta_extra)
     return {
         "messages": messages + [{"role": "assistant", "content": assistant}],
-        "meta": {"uid": rec["uid"], "dataset": rec["dataset"],
-                 "fold": rec["fold"], "with_rationale": bool(rat)},
+        "meta": meta,
     }
 
 
@@ -125,7 +145,35 @@ def build_chinese(recs, rationales, n_perms, value_summaries="auto"):
             p, _ = permute_record(rec, shift)
             key = rationale_key_for(rationales, rec["uid"], shift)
             out.append(make_example(p, p["gold"], rationales, key,
-                                    value_summaries=value_summaries))
+                                    value_summaries=value_summaries,
+                                    meta_extra={
+                                        "augmentation_source": "primary",
+                                        "permutation_order": "".join(
+                                            LETTERS4[
+                                                (i + shift) % 4]
+                                            for i in range(4)),
+                                    }))
+    return out
+
+
+def build_chinese_remaining_permutations(
+        recs, value_summaries="auto"):
+    """The 20 non-cyclic members of the complete 4! option-order set."""
+    out = []
+    for rec in recs:
+        for order in REMAINING_ORDERS:
+            permuted, _ = permute_record_order(rec, order)
+            out.append(make_example(
+                permuted,
+                permuted["gold"],
+                rationales={},
+                rationale_key=None,
+                value_summaries=value_summaries,
+                meta_extra={
+                    "augmentation_source": "remaining_permutation",
+                    "permutation_order": "".join(order),
+                },
+            ))
     return out
 
 
@@ -251,6 +299,13 @@ def main():
     ap.add_argument("--id_reviewed_labels", default=None,
                     help="path to indonesian_72_reviewed_labels.jsonl; required "
                          "when --id_mode majority.")
+    ap.add_argument(
+        "--only_zh_remaining_permutations",
+        action="store_true",
+        help="write only zh_train_remaining_permutations.jsonl: the 20 "
+             "non-cyclic members of each Chinese question's complete 4! "
+             "option-order set; do not rebuild the normal SFT files",
+    )
     args = ap.parse_args()
     processed, out_dir = Path(args.processed_dir), Path(args.out_dir)
 
@@ -267,6 +322,19 @@ def main():
         args.value_summaries = load_value_summaries(custom_path)
         print(f"loaded {len(args.value_summaries)} value summaries from "
               f"{custom_path!r} (applied to all datasets whose keys match)")
+
+    if args.only_zh_remaining_permutations:
+        chinese = load_jsonl(processed / "chinese.jsonl")
+        examples = build_chinese_remaining_permutations(
+            chinese, args.value_summaries)
+        random.Random(SEED).shuffle(examples)
+        output_path = out_dir / "zh_train_remaining_permutations.jsonl"
+        save_jsonl(examples, output_path)
+        print(
+            f"[zh-extra] {len(chinese)} items x {len(REMAINING_ORDERS)} "
+            f"remaining permutations -> {len(examples)} examples")
+        print(f"saved -> {output_path}")
+        return
 
     rationales = {}
     if args.rationales:
@@ -323,6 +391,17 @@ def main():
         examples = build(recs)
         rng.shuffle(examples)
         save_jsonl(examples, out_dir / f"{tag}_train_full.jsonl")
+        if tag == "zh" and args.n_perms == 4:
+            extra_examples = build_chinese_remaining_permutations(recs, vs)
+            rng.shuffle(extra_examples)
+            save_jsonl(
+                extra_examples,
+                out_dir / "zh_train_remaining_permutations.jsonl",
+            )
+            print(
+                f"[zh-extra] {len(recs)} items x "
+                f"{len(REMAINING_ORDERS)} remaining permutations -> "
+                f"{len(extra_examples)} examples")
         for k in range(N_FOLDS):
             fold_ex = [e for e in examples if e["meta"]["fold"] != k]
             save_jsonl(fold_ex, out_dir / f"{tag}_train_fold{k}.jsonl")
@@ -333,6 +412,8 @@ def main():
             "per_fold_train": {k: sum(1 for e in examples if e["meta"]["fold"] != k)
                                for k in range(N_FOLDS)},
         }
+        if tag == "zh" and args.n_perms == 4:
+            summary[tag]["remaining_permutation_rows"] = len(extra_examples)
         aux_note = (f" ({n_main} dev + {len(recs) - n_main} aux)"
                     if len(recs) != n_main else "")
         print(f"[{tag}] {len(recs)} items{aux_note} -> {len(examples)} SFT examples "

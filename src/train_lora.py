@@ -26,12 +26,12 @@ Runs on a single 16-24GB GPU with --load_4bit (QLoRA), or 40GB+ in bf16.
       sft_data/id_train_full.jsonl sft_data/si_train_full.jsonl \
       --output_dir runs/joint_full --load_4bit
 
-The default full-data schedule is hybrid and single-language on one GPU:
-5 physical rows x 4 gradient-accumulation passes = 20 rows per optimizer
-update, for 3 epochs. Chinese contributes 20 UIDs with one permutation each;
-Indonesian contributes 4 UIDs with one complete 5-vote permutation each; and
-Sri Lankan (including Sinhala MMLU aux) contributes 10 paired-statement UIDs.
-The final 16-row Sri Lankan block is retained.
+The default joint full-data schedule mixes all countries in every optimizer
+update: 2 physical rows x 10 gradient-accumulation passes = 20 rows, composed
+of 9 Indonesian, 7 Chinese, and 4 Sri Lankan rows. Indonesian and Chinese UIDs
+are unique within the 20-row block. After the 3,160 primary Chinese cyclic
+rows are consumed, training draws from the separate 20-per-question remaining
+permutation file produced by build_sft_data.py.
 """
 import argparse
 import json
@@ -43,9 +43,11 @@ from peft import LoraConfig, get_peft_model
 from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
                           Trainer, TrainerCallback, TrainingArguments)
 
-from grouped_microbatching import (build_grouped_optimizer_blocks,
-                                   grouped_schedule_stats,
-                                   load_schedule_rows)
+from mixed_microbatching import (OPTIMIZER_BLOCK_ROWS,
+                                 build_mixed_optimizer_blocks,
+                                 load_schedule_rows,
+                                 mixed_optimizer_step_count,
+                                 mixed_schedule_stats)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -213,29 +215,27 @@ def encode_example(tok, messages, max_len):
     return {"input_ids": input_ids, "labels": labels}
 
 
-class HybridLanguageDataset(torch.utils.data.IterableDataset):
-    """Rebuild the deterministic hybrid/language schedule on every epoch."""
+class MixedCountryDataset(torch.utils.data.IterableDataset):
+    """Rebuild the deterministic 9-ID/7-ZH/4-SI schedule every epoch."""
 
-    def __init__(self, features, optimizer_block_rows, seed):
+    def __init__(self, features, seed):
         super().__init__()
         self.features = features
-        self.optimizer_block_rows = optimizer_block_rows
         self.seed = seed
         self.epoch = 0
+        self.schedule_rows = (
+            mixed_optimizer_step_count(features) * OPTIMIZER_BLOCK_ROWS)
 
     def __len__(self):
-        return len(self.features)
+        return self.schedule_rows
 
     def __iter__(self):
         worker = torch.utils.data.get_worker_info()
         if worker is not None:
             raise RuntimeError(
-                "HybridLanguageDataset requires dataloader_num_workers=0")
-        blocks = build_grouped_optimizer_blocks(
-            self.features,
-            optimizer_block_rows=self.optimizer_block_rows,
-            seed=self.seed + self.epoch,
-        )
+                "MixedCountryDataset requires dataloader_num_workers=0")
+        blocks = build_mixed_optimizer_blocks(
+            self.features, seed=self.seed + self.epoch)
         self.epoch += 1
         for block in blocks:
             for index in block:
@@ -271,14 +271,22 @@ def main():
     ap.add_argument("--warmup_ratio", type=float, default=0.05,
                     help="fraction of total steps spent ramping the LR from 0 "
                          "to --lr before cosine decay begins (default 0.05)")
-    ap.add_argument("--batch_size", type=int, default=5)
-    ap.add_argument("--grad_accum", type=int, default=4)
-    ap.add_argument("--optimizer_block_rows", type=int, default=20,
-                    help="rows in one language-homogeneous optimizer block; "
-                         "must equal --batch_size * --grad_accum")
-    ap.add_argument("--no_grouped_language_batches", action="store_true",
-                    help="disable hybrid, single-language optimizer blocks "
-                         "and use the legacy row-level shuffle")
+    ap.add_argument("--batch_size", type=int, default=2)
+    ap.add_argument("--grad_accum", type=int, default=10)
+    ap.add_argument(
+        "--zh_extra_file",
+        default=str(ROOT / "sft_data" /
+                    "zh_train_remaining_permutations.jsonl"),
+        help="20 non-cyclic permutations per Chinese UID, used only after "
+             "the primary Chinese rows are exhausted",
+    )
+    ap.add_argument(
+        "--no_mixed_country_batches",
+        action="store_true",
+        help="disable the joint 9-ID/7-ZH/4-SI optimizer blocks and use a "
+             "normal row-level shuffle (automatically used for per-country "
+             "training)",
+    )
     ap.add_argument("--max_len", type=int, default=1536)
     ap.add_argument(
     "--load_4bit",
@@ -316,20 +324,36 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
-    grouped_batches = not args.no_grouped_language_batches
-    if grouped_batches and (
-            args.batch_size * args.grad_accum != args.optimizer_block_rows):
-        raise ValueError(
-            "hybrid batching requires --batch_size * --grad_accum == "
-            f"--optimizer_block_rows ({args.batch_size} * {args.grad_accum} "
-            f"!= {args.optimizer_block_rows})")
-
     multimodal = is_multimodal_checkpoint(args.base_model)
     tok = load_tokenizer(args.base_model, multimodal)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
 
     rows = load_examples(args.train_files)
+    datasets_present = {row["dataset"] for row in rows}
+    mixed_batches = (
+        not args.no_mixed_country_batches and
+        {"chinese", "indonesian", "sri_lankan"}.issubset(datasets_present)
+    )
+    extra_rows = []
+    if mixed_batches:
+        if args.batch_size * args.grad_accum != OPTIMIZER_BLOCK_ROWS:
+            raise ValueError(
+                "mixed batching requires --batch_size * --grad_accum == "
+                f"{OPTIMIZER_BLOCK_ROWS} ({args.batch_size} * "
+                f"{args.grad_accum} != {OPTIMIZER_BLOCK_ROWS})")
+        extra_path = Path(args.zh_extra_file)
+        if not extra_path.exists():
+            raise SystemExit(
+                f"Chinese remaining-permutation file not found: {extra_path}\n"
+                "Generate it with:\n"
+                "  python src/build_sft_data.py --n_perms 4 "
+                "--only_zh_remaining_permutations")
+        extra_rows = load_examples([extra_path])
+    elif not args.no_mixed_country_batches:
+        print("not all three countries were supplied -> using normal "
+              "row-level shuffle")
+
     eval_rows = []
     holdout = None
     if args.holdout_folds is not None:
@@ -339,6 +363,7 @@ def main():
     if holdout is not None:
         eval_rows = [r for r in rows if r["fold"] in holdout]
         rows = [r for r in rows if r["fold"] not in holdout]
+        extra_rows = [r for r in extra_rows if r["fold"] not in holdout]
         if not eval_rows:
             raise SystemExit(
                 f"holdout folds {sorted(holdout)} matched no examples. Pass the "
@@ -365,26 +390,27 @@ def main():
     feats, skipped = encode_all(rows)
     print(f"{len(feats)} training examples from {len(args.train_files)} file(s)"
           f" ({skipped} skipped as longer than {args.max_len} tokens)")
-    if grouped_batches and skipped:
-        raise SystemExit(
-            f"hybrid batching cannot silently drop {skipped} over-length rows "
-            "because that would break vote/permutation packets. Increase "
-            "--max_len or rebuild the affected data.")
-    if grouped_batches:
-        preview_blocks = build_grouped_optimizer_blocks(
-            feats, args.optimizer_block_rows, args.seed)
-        stats = grouped_schedule_stats(feats, preview_blocks)
-        print("hybrid one-language optimizer blocks:")
-        for dataset in sorted(stats):
-            values = stats[dataset]
-            print(
-                f"  {dataset}: {values['rows']} rows, {values['uids']} UIDs, "
-                f"{values['optimizer_blocks']} optimizer blocks")
+    extra_feats, extra_skipped = encode_all(extra_rows)
+    if mixed_batches:
         print(
-            f"  total: {len(preview_blocks)} optimizer blocks/epoch; "
+            f"{len(extra_feats)} Chinese remaining-permutation fallback "
+            f"examples ({extra_skipped} skipped)")
+    if mixed_batches and (skipped or extra_skipped):
+        raise SystemExit(
+            "mixed batching cannot silently drop over-length rows because "
+            "coverage accounting would become ambiguous. Increase --max_len.")
+    if mixed_batches:
+        schedule_feats = feats + extra_feats
+        preview_blocks = build_mixed_optimizer_blocks(
+            schedule_feats, seed=args.seed)
+        stats = mixed_schedule_stats(schedule_feats, preview_blocks)
+        print("mixed optimizer blocks (9 Indonesian / 7 Chinese / 4 Sinhala):")
+        print(f"  rows/epoch: {stats['rows']}")
+        print(f"  Chinese sources: {stats['chinese_sources']}")
+        print(
+            f"  total: {stats['optimizer_blocks']} optimizer blocks/epoch; "
             f"physical batch={args.batch_size}, accumulation={args.grad_accum}")
-        ds = HybridLanguageDataset(
-            feats, args.optimizer_block_rows, args.seed)
+        ds = MixedCountryDataset(schedule_feats, args.seed)
     else:
         ds = Dataset.from_list(feats).shuffle(seed=args.seed)
     eval_ds = None
