@@ -4,6 +4,7 @@
     "main_items": 790,
     "aux_items": 0,
     "train_full": 3160,
+    "remaining_permutation_rows": 15800,
     "with_rationale": 0,
     "per_fold_train": {
       "0": 2528,
