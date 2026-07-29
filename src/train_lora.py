@@ -24,7 +24,14 @@ Runs on a single 16-24GB GPU with --load_4bit (QLoRA), or 40GB+ in bf16.
   # final submission model (all dev data, no holdout):
   python src/train_lora.py --train_files sft_data/zh_train_full.jsonl \
       sft_data/id_train_full.jsonl sft_data/si_train_full.jsonl \
-      --output_dir runs/joint_full
+      --output_dir runs/joint_full --load_4bit
+
+The default full-data schedule is hybrid and single-language on one GPU:
+5 physical rows x 4 gradient-accumulation passes = 20 rows per optimizer
+update, for 3 epochs. Chinese contributes 20 UIDs with one permutation each;
+Indonesian contributes 4 UIDs with one complete 5-vote permutation each; and
+Sri Lankan (including Sinhala MMLU aux) contributes 10 paired-statement UIDs.
+The final 16-row Sri Lankan block is retained.
 """
 import argparse
 import json
@@ -35,6 +42,10 @@ from datasets import Dataset
 from peft import LoraConfig, get_peft_model
 from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
                           Trainer, TrainerCallback, TrainingArguments)
+
+from grouped_microbatching import (build_grouped_optimizer_blocks,
+                                   grouped_schedule_stats,
+                                   load_schedule_rows)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -171,15 +182,7 @@ class EpochLossCallback(TrainerCallback):
 
 
 def load_examples(paths):
-    rows = []
-    for p in paths:
-        with open(p, encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    r = json.loads(line)
-                    rows.append({"messages": r["messages"],
-                                 "fold": r.get("meta", {}).get("fold", -1)})
-    return rows
+    return load_schedule_rows(paths)
 
 
 def template_ids(tok, messages):
@@ -210,6 +213,35 @@ def encode_example(tok, messages, max_len):
     return {"input_ids": input_ids, "labels": labels}
 
 
+class HybridLanguageDataset(torch.utils.data.IterableDataset):
+    """Rebuild the deterministic hybrid/language schedule on every epoch."""
+
+    def __init__(self, features, optimizer_block_rows, seed):
+        super().__init__()
+        self.features = features
+        self.optimizer_block_rows = optimizer_block_rows
+        self.seed = seed
+        self.epoch = 0
+
+    def __len__(self):
+        return len(self.features)
+
+    def __iter__(self):
+        worker = torch.utils.data.get_worker_info()
+        if worker is not None:
+            raise RuntimeError(
+                "HybridLanguageDataset requires dataloader_num_workers=0")
+        blocks = build_grouped_optimizer_blocks(
+            self.features,
+            optimizer_block_rows=self.optimizer_block_rows,
+            seed=self.seed + self.epoch,
+        )
+        self.epoch += 1
+        for block in blocks:
+            for index in block:
+                yield self.features[index]
+
+
 class PadCollator:
     def __init__(self, pad_id):
         self.pad_id = pad_id
@@ -234,13 +266,19 @@ def main():
     ap.add_argument("--lora_r", type=int, default=16)
     ap.add_argument("--lora_alpha", type=int, default=32)
     ap.add_argument("--lora_dropout", type=float, default=0.05)
-    ap.add_argument("--epochs", type=float, default=2.0)
+    ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--lr", type=float, default=1e-4)
-    ap.add_argument("--warmup_ratio", type=float, default=0.03,
+    ap.add_argument("--warmup_ratio", type=float, default=0.05,
                     help="fraction of total steps spent ramping the LR from 0 "
-                         "to --lr before cosine decay begins (default 0.03)")
-    ap.add_argument("--batch_size", type=int, default=2)
-    ap.add_argument("--grad_accum", type=int, default=8)
+                         "to --lr before cosine decay begins (default 0.05)")
+    ap.add_argument("--batch_size", type=int, default=5)
+    ap.add_argument("--grad_accum", type=int, default=4)
+    ap.add_argument("--optimizer_block_rows", type=int, default=20,
+                    help="rows in one language-homogeneous optimizer block; "
+                         "must equal --batch_size * --grad_accum")
+    ap.add_argument("--no_grouped_language_batches", action="store_true",
+                    help="disable hybrid, single-language optimizer blocks "
+                         "and use the legacy row-level shuffle")
     ap.add_argument("--max_len", type=int, default=1536)
     ap.add_argument(
     "--load_4bit",
@@ -264,7 +302,7 @@ def main():
     ap.add_argument("--save_steps", type=int, default=0,
                     help="save a checkpoint every N optimizer steps (0 = only at "
                          "epoch end). Use e.g. 50 on Colab to survive disconnects.")
-    ap.add_argument("--save_total_limit", type=int, default=2,
+    ap.add_argument("--save_total_limit", type=int, default=3,
                     help="keep only the newest N step-checkpoints (saves disk)")
     ap.add_argument("--resume", action="store_true",
                     help="resume from the latest checkpoint-* in --output_dir")
@@ -273,10 +311,18 @@ def main():
                          "--logging_steps optimizer steps; 'epoch' prints only "
                          "once per epoch. Either way, an averaged per-epoch "
                          "summary is ALWAYS printed too (see EpochLossCallback)")
-    ap.add_argument("--logging_steps", type=int, default=100,
-                    help="print training loss every N steps (default 100)")
+    ap.add_argument("--logging_steps", type=int, default=10,
+                    help="print training loss every N steps (default 10)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
+
+    grouped_batches = not args.no_grouped_language_batches
+    if grouped_batches and (
+            args.batch_size * args.grad_accum != args.optimizer_block_rows):
+        raise ValueError(
+            "hybrid batching requires --batch_size * --grad_accum == "
+            f"--optimizer_block_rows ({args.batch_size} * {args.grad_accum} "
+            f"!= {args.optimizer_block_rows})")
 
     multimodal = is_multimodal_checkpoint(args.base_model)
     tok = load_tokenizer(args.base_model, multimodal)
@@ -308,13 +354,39 @@ def main():
             if enc is None:
                 skipped += 1
             else:
+                enc.update({
+                    "uid": r["uid"],
+                    "dataset": r["dataset"],
+                    "messages": r["messages"],
+                })
                 feats.append(enc)
         return feats, skipped
 
     feats, skipped = encode_all(rows)
     print(f"{len(feats)} training examples from {len(args.train_files)} file(s)"
           f" ({skipped} skipped as longer than {args.max_len} tokens)")
-    ds = Dataset.from_list(feats).shuffle(seed=args.seed)
+    if grouped_batches and skipped:
+        raise SystemExit(
+            f"hybrid batching cannot silently drop {skipped} over-length rows "
+            "because that would break vote/permutation packets. Increase "
+            "--max_len or rebuild the affected data.")
+    if grouped_batches:
+        preview_blocks = build_grouped_optimizer_blocks(
+            feats, args.optimizer_block_rows, args.seed)
+        stats = grouped_schedule_stats(feats, preview_blocks)
+        print("hybrid one-language optimizer blocks:")
+        for dataset in sorted(stats):
+            values = stats[dataset]
+            print(
+                f"  {dataset}: {values['rows']} rows, {values['uids']} UIDs, "
+                f"{values['optimizer_blocks']} optimizer blocks")
+        print(
+            f"  total: {len(preview_blocks)} optimizer blocks/epoch; "
+            f"physical batch={args.batch_size}, accumulation={args.grad_accum}")
+        ds = HybridLanguageDataset(
+            feats, args.optimizer_block_rows, args.seed)
+    else:
+        ds = Dataset.from_list(feats).shuffle(seed=args.seed)
     eval_ds = None
     if eval_rows:
         eval_feats, _ = encode_all(eval_rows)
@@ -384,6 +456,8 @@ def main():
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         gradient_checkpointing=True,
+        max_grad_norm=1.0,
+        weight_decay=0.0,
         bf16=not args.load_8bit,
         fp16=args.load_8bit,
         logging_strategy=args.logging_strategy,
@@ -394,6 +468,8 @@ def main():
         seed=args.seed,
         report_to="none",
         remove_unused_columns=False,  # keep pre-tokenized columns with PeftModel
+        dataloader_drop_last=False,
+        dataloader_num_workers=0,
         eval_strategy="steps" if eval_rows else "no",
         eval_steps=args.eval_steps,
         per_device_eval_batch_size=max(2, args.batch_size),
