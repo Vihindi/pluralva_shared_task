@@ -383,6 +383,9 @@ def main():
                     "uid": r["uid"],
                     "dataset": r["dataset"],
                     "messages": r["messages"],
+                    "augmentation_source": r.get(
+                        "augmentation_source", "primary"),
+                    "permutation_order": r.get("permutation_order"),
                 })
                 feats.append(enc)
         return feats, skipped
