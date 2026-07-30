@@ -16,6 +16,10 @@ mode="cot"    -> brief reasoning first, then the marker (used for rationale
                  bootstrapping and self-consistency later)
 """
 
+import re
+import unicodedata
+
+
 ANSWER_RE = r"Answer:\s*([ABCD]|Yes|No)"
 
 # ---------------------------------------------------------------- Chinese ---
@@ -104,10 +108,12 @@ SI_VALUE_CONTEXT_BLOCK = """Value context — common patterns in how Sri Lankan 
 # --- English (active) -------------------------------------------------------
 SI_BIN_SYSTEM = (
     "You are an assistant with deep familiarity with Sri Lankan societal values "
-    "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read "
-    "a question and one candidate statement, both in Sinhala. Judge whether the "
-    "statement is a correct and socially appropriate answer to the question "
-    "according to the given Sri Lankan value."
+    "across its Sinhalese, Tamil, Muslim and Burgher communities. Read the "
+    "Sinhala question and candidate statement carefully. Use the stated value "
+    "and Sri Lankan context, but focus on exactly what the question asks. "
+    "Answer Yes only when the candidate clearly and directly satisfies the "
+    "question; otherwise answer No. Do not accept it merely because it sounds "
+    "positive, moral, or related to the value."
 )
 
 SI_BIN_USER = """Value being tested: {value_english}
@@ -120,14 +126,58 @@ Candidate statement (Sinhala):
 
 {instruction}"""
 
-SI_BIN_INSTR_DIRECT = ("Reply with exactly one line: \"Answer: Yes\" if the statement is a "
-                       "correct and appropriate answer to the question, or \"Answer: No\" "
-                       "if it is not.")
-SI_BIN_INSTR_COT = (
-    "First, briefly explain in English what the question asks and whether the "
-    "statement upholds or violates the value in a Sri Lankan context (max 80 words). "
-    "Then give your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
+SI_BIN_INSTR_NORMAL = (
+    "Judge whether the candidate directly gives the answer requested by the "
+    "question. Reply with exactly \"Answer: Yes\" or \"Answer: No\"."
 )
+SI_BIN_INSTR_NEGATIVE = (
+    "This is a negative or exclusion question. Answer Yes only if the candidate "
+    "is the item requested as NOT correct, NOT appropriate, or excluded. Do not "
+    "judge it merely by whether it sounds socially good or bad. Reply with "
+    "exactly \"Answer: Yes\" or \"Answer: No\"."
+)
+SI_BIN_INSTR_COT_NORMAL = (
+    "First, briefly explain in English what the question asks and whether the "
+    "candidate directly gives the requested answer (max 80 words). Then give "
+    "your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
+)
+SI_BIN_INSTR_COT_NEGATIVE = (
+    "First, briefly identify the negative or exclusion condition and whether "
+    "the candidate is the item requested as NOT correct, NOT appropriate, or "
+    "excluded (max 80 words). Then give your final judgment on the last line as "
+    "\"Answer: Yes\" or \"Answer: No\"."
+)
+
+# Backward-compatible names for callers that import the original constants.
+SI_BIN_INSTR_DIRECT = SI_BIN_INSTR_NORMAL
+SI_BIN_INSTR_COT = SI_BIN_INSTR_COT_NORMAL
+
+# Specific question-level exclusion constructions. Do not match the bare
+# Sinhala prefix "නො", or unbounded "වැරදි" (which is contained in "නිවැරදි"),
+# because both produce false routes in ordinary questions.
+SI_NEGATIVE_QUESTION_PATTERNS = (
+    r"නොවන්නේ",
+    r"නො[\u0D80-\u0DFF\u200c\u200d]*න්නේ",
+    r"නොවන\s+(?:කරුණ|ප්‍රකාශ|ක්‍රම|ක්‍රියා|පිළිතුර|ලක්ෂණ|අංග|අදහස|"
+    r"හැසිරීම|වටිනාකම|සාධක)",
+    r"නොකළ\s+යුතු",
+    r"නොගැළපෙන",
+    r"අයත්\s+නොවන",
+    r"නිවැරදි\s+නොවන",
+    r"(?:^|\s)වැරදි\s+ප්‍රකාශ",
+    r"(?:^|\s)අසත්‍ය\s+ප්‍රකාශ",
+    r"\bnot\s+correct\b",
+    r"\bincorrect\b",
+    r"\bexcept\b",
+    r"\bleast\s+appropriate\b",
+)
+
+
+def is_si_negative_question(question):
+    """Return whether a Sinhala question explicitly asks for an exclusion."""
+    normalized = unicodedata.normalize("NFC", question or "").casefold()
+    return any(re.search(pattern, normalized)
+               for pattern in SI_NEGATIVE_QUESTION_PATTERNS)
 
 # # --- Sinhala (active) --------------------------------------------------------
 # SI_BIN_SYSTEM = (
@@ -334,7 +384,13 @@ def build_messages(rec, mode="direct", si_statement=None, value_summaries="auto"
 
     if ds == "sri_lankan":
         if si_statement in ("A", "B"):
-            instr = SI_BIN_INSTR_DIRECT if mode == "direct" else SI_BIN_INSTR_COT
+            negative = is_si_negative_question(rec["question"])
+            if mode == "direct":
+                instr = (SI_BIN_INSTR_NEGATIVE if negative
+                         else SI_BIN_INSTR_NORMAL)
+            else:
+                instr = (SI_BIN_INSTR_COT_NEGATIVE if negative
+                         else SI_BIN_INSTR_COT_NORMAL)
             user = SI_BIN_USER.format(
                 value_english=rec["value_english"], question=rec["question"],
                 statement=rec["options"][si_statement], instruction=instr)
