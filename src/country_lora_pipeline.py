@@ -4,7 +4,7 @@ This is the Method-3 training entry point for PlurVA-LLM Track 1:
 
     zh_train_full.jsonl -> Chinese adapter
     id_train_full.jsonl -> Indonesian adapter
-    si_train_full.jsonl -> Sri Lankan binary adapter
+    si_train_full.jsonl -> Sri Lankan binary or four-way adapter
 
 The input files must be produced by build_sft_data.py. The base checkpoint is
 loaded once. For every country, a fresh LoRA is attached, trained only on that
@@ -44,7 +44,10 @@ COUNTRIES = (
 TARGET_PATTERNS = {
     "chinese": re.compile(r"(?:^|\n)Answer: ([ABCD])\s*$"),
     "indonesian": re.compile(r"(?:^|\n)Answer: ([ABCD])\s*$"),
-    "sri_lankan": re.compile(r"(?:^|\n)Answer: (Yes|No)\s*$"),
+}
+SI_TARGET_PATTERNS = {
+    "binary": re.compile(r"(?:^|\n)Answer: (Yes|No)\s*$"),
+    "4way": re.compile(r"(?:^|\n)Answer: (A|B|Both|0)\s*$"),
 }
 
 
@@ -55,6 +58,21 @@ def build_arg_parser():
     ap.add_argument("--base_model", default="Qwen/Qwen3.5-4B")
     ap.add_argument("--train_dir", default=str(ROOT / "sft_data"))
     ap.add_argument("--output_dir", required=True)
+    ap.add_argument(
+        "--countries",
+        nargs="+",
+        choices=[dataset for dataset, _, _ in COUNTRIES],
+        default=[dataset for dataset, _, _ in COUNTRIES],
+        help="country adapters to train (default: all three); for example, "
+             "--countries sri_lankan",
+    )
+    ap.add_argument(
+        "--si_mode",
+        choices=["binary", "4way"],
+        default="binary",
+        help="expected Sri Lankan SFT target format; must match the "
+             "--si_mode used by build_sft_data.py",
+    )
     ap.add_argument("--lora_r", type=int, default=16)
     ap.add_argument("--lora_alpha", type=int, default=32)
     ap.add_argument("--lora_dropout", type=float, default=0.05)
@@ -108,7 +126,7 @@ def validate_args(args):
                          "cannot be negative")
 
 
-def load_and_validate_sft(path, expected_dataset):
+def load_and_validate_sft(path, expected_dataset, si_mode="binary"):
     """Load one build_sft_data.py full file and validate its chat contract."""
     path = Path(path)
     if path.name != dict((ds, fn) for ds, _, fn in COUNTRIES)[expected_dataset]:
@@ -147,10 +165,17 @@ def load_and_validate_sft(path, expected_dataset):
                 raise ValueError(
                     f"{path}:{line_no}: system/user messages are required")
             target = messages[-1].get("content")
-            if not isinstance(target, str) or not TARGET_PATTERNS[
-                    expected_dataset].search(target):
-                legal = ("Answer: Yes/No" if expected_dataset == "sri_lankan"
-                         else "Answer: A/B/C/D")
+            target_pattern = (
+                SI_TARGET_PATTERNS[si_mode]
+                if expected_dataset == "sri_lankan"
+                else TARGET_PATTERNS[expected_dataset]
+            )
+            if not isinstance(target, str) or not target_pattern.search(target):
+                if expected_dataset == "sri_lankan":
+                    legal = ("Answer: Yes/No" if si_mode == "binary"
+                             else "Answer: A/B/Both/0")
+                else:
+                    legal = "Answer: A/B/C/D"
                 raise ValueError(
                     f"{path}:{line_no}: assistant target must end with {legal}")
             rows.append({"messages": messages, "uid": meta.get("uid")})
@@ -358,12 +383,17 @@ def run_train(args):
     validate_args(args)
     train_dir = Path(args.train_dir)
     output_dir = Path(args.output_dir)
+    selected = set(args.countries)
+    selected_countries = [
+        country for country in COUNTRIES if country[0] in selected
+    ]
 
     loaded_rows = {}
     output_paths = {}
-    for dataset, prefix, filename in COUNTRIES:
+    for dataset, prefix, filename in selected_countries:
         path = train_dir / filename
-        loaded_rows[dataset] = load_and_validate_sft(path, dataset)
+        loaded_rows[dataset] = load_and_validate_sft(
+            path, dataset, si_mode=args.si_mode)
         output_paths[dataset] = output_dir / dataset
         if adapter_is_complete(output_paths[dataset]) and not (
                 args.skip_existing or args.resume):
@@ -372,12 +402,12 @@ def run_train(args):
                 "Use a new --output_dir or pass --skip_existing.")
 
     to_train = [
-        dataset for dataset, _, _ in COUNTRIES
+        dataset for dataset, _, _ in selected_countries
         if not ((args.skip_existing or args.resume) and adapter_is_complete(
             output_paths[dataset]))
     ]
     if not to_train:
-        print("all three final adapters already exist; nothing to train")
+        print("all selected final adapters already exist; nothing to train")
         return
 
     # Heavy dependencies are intentionally imported only after CLI/data checks.
@@ -448,11 +478,13 @@ def run_train(args):
         },
         "seed": args.seed,
         "max_len": args.max_len,
+        "selected_countries": [dataset for dataset, _, _ in selected_countries],
+        "si_mode": args.si_mode,
         "adapters": {},
         "package_versions": package_versions(),
     }
 
-    for dataset, prefix, filename in COUNTRIES:
+    for dataset, prefix, filename in selected_countries:
         country_dir = output_paths[dataset]
         if dataset not in to_train:
             print(f"[{dataset}] complete adapter exists; skipping")
@@ -542,6 +574,8 @@ def run_train(args):
             "max_len": args.max_len,
             "seed": args.seed,
         }
+        if dataset == "sri_lankan":
+            summary["si_mode"] = args.si_mode
         write_json(country_dir / "training_summary.json", summary)
         manifest["adapters"][dataset] = {
             "path": str(country_dir),

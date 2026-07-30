@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import make_submission
-from country_lora_pipeline import load_and_validate_sft
+from country_lora_pipeline import build_arg_parser, load_and_validate_sft
 
 
 class FakeScorer:
@@ -59,12 +59,13 @@ def fake_evaluate_module():
 
 
 class SftValidationTests(unittest.TestCase):
-    def test_rejects_non_binary_sri_lankan_target(self):
+    @staticmethod
+    def write_si_row(path, answer):
         row = {
             "messages": [
                 {"role": "system", "content": "system"},
                 {"role": "user", "content": "user"},
-                {"role": "assistant", "content": "Answer: Both"},
+                {"role": "assistant", "content": f"Answer: {answer}"},
             ],
             "meta": {
                 "uid": "SI-test",
@@ -72,11 +73,40 @@ class SftValidationTests(unittest.TestCase):
                 "fold": 0,
             },
         }
+        path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    def test_binary_mode_rejects_four_way_sri_lankan_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "si_train_full.jsonl"
-            path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            self.write_si_row(path, "Both")
             with self.assertRaisesRegex(ValueError, "Answer: Yes/No"):
                 load_and_validate_sft(path, "sri_lankan")
+
+    def test_four_way_mode_accepts_four_way_sri_lankan_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "si_train_full.jsonl"
+            self.write_si_row(path, "Both")
+            rows = load_and_validate_sft(
+                path, "sri_lankan", si_mode="4way")
+            self.assertEqual(len(rows), 1)
+
+    def test_four_way_mode_rejects_binary_sri_lankan_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "si_train_full.jsonl"
+            self.write_si_row(path, "Yes")
+            with self.assertRaisesRegex(ValueError, "Answer: A/B/Both/0"):
+                load_and_validate_sft(
+                    path, "sri_lankan", si_mode="4way")
+
+    def test_parser_can_select_only_sri_lankan_four_way(self):
+        args = build_arg_parser().parse_args([
+            "train",
+            "--output_dir", "runs/test",
+            "--countries", "sri_lankan",
+            "--si_mode", "4way",
+        ])
+        self.assertEqual(args.countries, ["sri_lankan"])
+        self.assertEqual(args.si_mode, "4way")
 
 
 class SubmissionRoutingTests(unittest.TestCase):
