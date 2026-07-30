@@ -37,7 +37,7 @@ from pathlib import Path
 
 import torch
 from datasets import Dataset
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, PeftConfig, PeftModel, get_peft_model
 from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
                           Trainer, TrainerCallback, TrainingArguments)
 
@@ -259,6 +259,14 @@ class PadCollator:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base_model", default="Qwen/Qwen3-8B")
+    ap.add_argument(
+        "--init_adapter",
+        default=None,
+        help="optional LoRA adapter used as the trainable initialization. "
+             "The source adapter is read-only and training starts with a "
+             "fresh optimizer/scheduler. Omit to create a new LoRA from the "
+             "base model.",
+    )
     ap.add_argument("--train_files", nargs="+", required=True)
     ap.add_argument("--output_dir", required=True)
     ap.add_argument("--lora_r", type=int, default=16)
@@ -339,6 +347,29 @@ def main():
                     help="print training loss every N steps (default 10)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
+
+    if args.init_adapter and args.resume:
+        raise ValueError(
+            "--init_adapter and --resume are mutually exclusive: use "
+            "--init_adapter for a fresh optimizer over existing adapter "
+            "weights, or --resume to restore an output checkpoint including "
+            "optimizer/scheduler state")
+    if args.init_adapter:
+        init_path = Path(args.init_adapter)
+        output_path = Path(args.output_dir)
+        if init_path.exists():
+            init_resolved = init_path.resolve()
+            output_resolved = output_path.resolve()
+            if (init_resolved == output_resolved or
+                    output_resolved.is_relative_to(init_resolved) or
+                    init_resolved.is_relative_to(output_resolved)):
+                raise ValueError(
+                    "--init_adapter and --output_dir must be separate, "
+                    "non-nested directories so the source adapter is never "
+                    "modified or overwritten")
+        elif str(init_path) == str(output_path):
+            raise ValueError(
+                "--init_adapter and --output_dir must be different")
 
     multimodal = is_multimodal_checkpoint(args.base_model)
     tok = load_tokenizer(args.base_model, multimodal)
@@ -532,13 +563,59 @@ def main():
     else:
         model.enable_input_require_grads()
 
-    target_modules = resolve_target_modules(model)
+    if args.init_adapter:
+        init_config = PeftConfig.from_pretrained(args.init_adapter)
+        peft_type = str(getattr(init_config, "peft_type", "")).upper()
+        if "LORA" not in peft_type:
+            raise ValueError(
+                f"--init_adapter must be a LoRA adapter, got "
+                f"{getattr(init_config, 'peft_type', None)!r}")
+        configured_base = getattr(
+            init_config, "base_model_name_or_path", None)
+        if configured_base:
+            expected = str(configured_base).replace("\\", "/").rstrip("/").casefold()
+            supplied = str(args.base_model).replace("\\", "/").rstrip("/").casefold()
+            if expected != supplied:
+                raise ValueError(
+                    "base-model mismatch: --init_adapter was trained on "
+                    f"{configured_base!r}, but --base_model is "
+                    f"{args.base_model!r}")
+        adapter_r = getattr(init_config, "r", None)
+        adapter_alpha = getattr(init_config, "lora_alpha", None)
+        adapter_dropout = getattr(init_config, "lora_dropout", None)
+        mismatches = []
+        if adapter_r is not None and adapter_r != args.lora_r:
+            mismatches.append(f"rank {adapter_r} != --lora_r {args.lora_r}")
+        if adapter_alpha is not None and adapter_alpha != args.lora_alpha:
+            mismatches.append(
+                f"alpha {adapter_alpha} != --lora_alpha {args.lora_alpha}")
+        if (adapter_dropout is not None and
+                abs(float(adapter_dropout) - args.lora_dropout) > 1e-12):
+            mismatches.append(
+                f"dropout {adapter_dropout} != --lora_dropout "
+                f"{args.lora_dropout}")
+        if mismatches:
+            raise ValueError(
+                "LoRA configuration mismatch for --init_adapter: " +
+                "; ".join(mismatches))
+        print(f"loading trainable LoRA initialization: {args.init_adapter}")
+        print(
+            "starting a fresh optimizer and scheduler; source adapter remains "
+            "unchanged")
+        model = PeftModel.from_pretrained(
+            model, args.init_adapter, is_trainable=True)
+        target_modules = sorted(getattr(init_config, "target_modules", []) or [])
+    else:
+        target_modules = resolve_target_modules(model)
+        peft_config = LoraConfig(
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            target_modules=target_modules,
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, peft_config)
     print(f"LoRA target modules ({len(target_modules)}): {target_modules}")
-    peft_config = LoraConfig(
-        r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
-        target_modules=target_modules,
-        task_type="CAUSAL_LM")
-    model = get_peft_model(model, peft_config)
     model.print_trainable_parameters()
 
     train_args = TrainingArguments(
@@ -592,8 +669,33 @@ def main():
     hist_path = Path(args.output_dir) / "log_history.json"
     with open(hist_path, "w", encoding="utf-8") as f:
         json.dump(trainer.state.log_history, f, indent=2)
+    summary_path = Path(args.output_dir) / "training_summary.json"
+    with open(summary_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "base_model": args.base_model,
+            "init_adapter": args.init_adapter,
+            "fresh_optimizer": not args.resume,
+            "train_files": args.train_files,
+            "datasets": sorted(datasets_present),
+            "training_rows": len(feats),
+            "epochs": args.epochs,
+            "learning_rate": args.lr,
+            "warmup_ratio": args.warmup_ratio,
+            "batch_size": args.batch_size,
+            "gradient_accumulation": args.grad_accum,
+            "effective_batch_size": args.batch_size * args.grad_accum,
+            "lora_r": args.lora_r,
+            "lora_alpha": args.lora_alpha,
+            "lora_dropout": args.lora_dropout,
+            "max_len": args.max_len,
+            "mixed_country_batches": mixed_batches,
+            "oversample_si_negation_3x":
+                args.oversample_si_negation_3x,
+            "seed": args.seed,
+        }, f, ensure_ascii=False, indent=2)
     print(f"adapter saved to {args.output_dir}")
     print(f"loss history -> {hist_path}")
+    print(f"training summary -> {summary_path}")
 
 
 if __name__ == "__main__":
