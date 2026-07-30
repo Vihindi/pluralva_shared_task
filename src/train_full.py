@@ -152,7 +152,8 @@ def build_parser():
     parser.add_argument(
         "--resume",
         action="store_true",
-        help="resume the newest checkpoint-* inside --output_dir",
+        help="unsupported when optimizer checkpoints are disabled; retained "
+             "to provide a clear error for older commands",
     )
     return parser
 
@@ -172,17 +173,12 @@ def validate_args(args):
         raise ValueError("--save_steps must be positive")
     if args.save_total_limit <= 0:
         raise ValueError("--save_total_limit must be positive")
-
-
-def newest_checkpoint(output_dir):
-    checkpoints = []
-    for path in Path(output_dir).glob("checkpoint-*"):
-        try:
-            step = int(path.name.rsplit("-", 1)[-1])
-        except ValueError:
-            continue
-        checkpoints.append((step, path))
-    return str(max(checkpoints)[1]) if checkpoints else None
+    if args.resume:
+        raise ValueError(
+            "--resume is unavailable because optimizer checkpoint saving is "
+            "disabled. A model-only checkpoint can be supplied through "
+            "--base_model to begin a new run with a fresh optimizer."
+        )
 
 
 def main():
@@ -277,6 +273,7 @@ def main():
         save_strategy="steps",
         save_steps=args.save_steps,
         save_total_limit=args.save_total_limit,
+        save_only_model=True,
         seed=args.seed,
         data_seed=args.seed,
         report_to="none",
@@ -289,19 +286,12 @@ def main():
         model=model,
         args=training_args,
         train_dataset=train_dataset,
+        processing_class=tokenizer,
         data_collator=PadCollator(tokenizer.pad_token_id),
         callbacks=[EpochLossCallback()],
     )
 
-    resume_checkpoint = None
-    if args.resume:
-        resume_checkpoint = newest_checkpoint(args.output_dir)
-        if resume_checkpoint:
-            print(f"resuming from {resume_checkpoint}")
-        else:
-            print("--resume requested, but no checkpoint-* exists; starting fresh")
-
-    trainer.train(resume_from_checkpoint=resume_checkpoint)
+    trainer.train()
     trainer.save_model(args.output_dir)
     tokenizer.save_pretrained(args.output_dir)
 
@@ -334,6 +324,9 @@ def main():
                 "max_len": args.max_len,
                 "save_steps": args.save_steps,
                 "save_total_limit": args.save_total_limit,
+                "model_only_checkpoints": True,
+                "optimizer_checkpoints": False,
+                "exact_resume_supported": False,
                 "seed": args.seed,
                 "trainable_parameters": trainable_parameters,
                 "total_parameters": total_parameters,

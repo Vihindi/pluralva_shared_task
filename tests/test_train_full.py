@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from train_full import build_parser, newest_checkpoint, validate_args
+from train_full import build_parser, validate_args
 
 
 def test_full_finetuning_defaults_are_the_one_run_configuration():
@@ -43,9 +43,16 @@ def test_save_steps_must_be_positive():
         validate_args(args)
 
 
-def test_newest_checkpoint_uses_numeric_step_order(tmp_path):
-    (tmp_path / "checkpoint-9").mkdir()
-    (tmp_path / "checkpoint-100").mkdir()
-    (tmp_path / "checkpoint-invalid").mkdir()
+def test_resume_is_rejected_for_model_only_checkpoints():
+    args = build_parser().parse_args(
+        [
+            "--train_files",
+            "train.jsonl",
+            "--output_dir",
+            "run",
+            "--resume",
+        ]
+    )
 
-    assert newest_checkpoint(tmp_path).endswith("checkpoint-100")
+    with pytest.raises(ValueError, match="optimizer"):
+        validate_args(args)
