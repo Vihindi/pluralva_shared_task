@@ -312,12 +312,14 @@ def score_mcq(scorer, rec, n_perms=1, prior=None, prior_tau=0.0, value_summaries
     return acc
 
 
-def score_si(scorer, rec, threshold=0.5, value_summaries="auto"):
+def score_si(scorer, rec, threshold=0.5, value_summaries="auto",
+             si_negation_prompt=False):
     """Binary-decomposed Sri Lankan scoring -> (label, p_yes_A, p_yes_B)."""
     p_yes = {}
     for stmt in ("A", "B"):
         messages = build_messages(rec, mode="direct", si_statement=stmt,
-                                  value_summaries=value_summaries)
+                                  value_summaries=value_summaries,
+                                  si_negation_prompt=si_negation_prompt)
         lps = scorer.score_candidates(messages, ["Answer: Yes", "Answer: No"])
         p_yes[stmt] = softmax(lps)[0]
     a, b = p_yes["A"] >= threshold, p_yes["B"] >= threshold
@@ -347,14 +349,16 @@ def score_mcq_gen(scorer, rec, n_perms=1, value_summaries="auto",
 
 
 def score_si_gen(scorer, rec, threshold=0.5, value_summaries="auto",
-                 max_new_tokens=1024, temperature=0.0):
+                 max_new_tokens=1024, temperature=0.0,
+                 si_negation_prompt=False):
     """Generation-based Sri Lankan scoring for thought-channel models: reason
     per statement, parse the final 'Answer: Yes/No'. Same (label, pa, pb) shape
     as score_si, with pa/pb in {0.0, 1.0}."""
     p_yes = {}
     for stmt in ("A", "B"):
         messages = build_messages(rec, mode="cot", si_statement=stmt,
-                                  value_summaries=value_summaries)
+                                  value_summaries=value_summaries,
+                                  si_negation_prompt=si_negation_prompt)
         text = scorer.generate_text(messages, max_new_tokens=max_new_tokens,
                                     temperature=temperature)
         ans = parse_generated_answer(text, ["Yes", "No"])
@@ -435,10 +439,12 @@ def run_eval(args, scorer):
                         scorer, rec, threshold=args.si_threshold,
                         value_summaries=args.value_summaries,
                         max_new_tokens=args.max_new_tokens,
-                        temperature=args.gen_temperature)
+                        temperature=args.gen_temperature,
+                        si_negation_prompt=args.enable_si_negation_prompt)
                 else:
                     pred, pa, pb = score_si(scorer, rec, threshold=args.si_threshold,
-                                            value_summaries=args.value_summaries)
+                                            value_summaries=args.value_summaries,
+                                            si_negation_prompt=args.enable_si_negation_prompt)
                 extra = {"p_yes_A": pa, "p_yes_B": pb}
             else:
                 if args.generate:
@@ -511,7 +517,8 @@ def run_predict(args, scorer):
                 pred = max(probs, key=probs.get)
             elif ds == "sri_lankan":
                 pred, _, _ = score_si(scorer, rec, threshold=args.si_threshold,
-                                      value_summaries=args.value_summaries)
+                                      value_summaries=args.value_summaries,
+                                      si_negation_prompt=args.enable_si_negation_prompt)
             else:
                 probs = score_mcq(scorer, rec, n_perms=args.n_perms,
                                   prior=dev_priors.get(ds), prior_tau=args.prior_tau,
@@ -550,6 +557,13 @@ def main():
                          "statement Yes/No and composes A/B/Both/0; '4way' scores "
                          "the four labels directly (both statements in one "
                          "prompt). Must match the adapter's training --si_mode.")
+    ap.add_argument(
+        "--enable_si_negation_prompt",
+        action="store_true",
+        help="binary Sinhala only: use the specialized negative-question "
+             "instruction. Enable only when the SFT data was built with the "
+             "same flag.",
+    )
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--load_8bit", action="store_true")
     ap.add_argument("--trust_remote_code", action="store_true",

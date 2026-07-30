@@ -105,8 +105,8 @@ SI_VALUE_CONTEXT_BLOCK = """Value context — common patterns in how Sri Lankan 
 # evaluate.py, self_consistency.py, and train_lora.py all parse/score that
 # exact English string. Only the surrounding descriptive text is translated.
 
-# --- English (active) -------------------------------------------------------
-SI_BIN_SYSTEM = (
+# --- English baseline (used when negation routing is disabled) --------------
+SI_BIN_BASE_SYSTEM = (
     "You are an assistant with deep familiarity with Sri Lankan societal values "
     "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read "
     "a question and one candidate statement, both in Sinhala. Judge whether the "
@@ -124,10 +124,32 @@ Candidate statement (Sinhala):
 
 {instruction}"""
 
-SI_BIN_INSTR_NORMAL = (
+SI_BIN_BASE_INSTR_DIRECT = (
     "Reply with exactly one line: \"Answer: Yes\" if the statement is a "
     "correct and appropriate answer to the question, or \"Answer: No\" if it "
     "is not."
+)
+SI_BIN_BASE_INSTR_COT = (
+    "First, briefly explain in English what the question asks and whether the "
+    "statement upholds or violates the value in a Sri Lankan context (max 80 "
+    "words). Then give your final judgment on the last line as \"Answer: Yes\" "
+    "or \"Answer: No\"."
+)
+
+# --- English routed prompts (enabled only by --enable_si_negation_prompt) ---
+SI_BIN_SYSTEM = (
+    "You are an assistant with deep familiarity with Sri Lankan societal values "
+    "across its Sinhalese, Tamil, Muslim and Burgher communities. Read the "
+    "Sinhala question and candidate statement carefully. Use the stated value "
+    "and Sri Lankan context, but focus on exactly what the question asks. "
+    "Answer Yes only when the candidate clearly and directly satisfies the "
+    "question; otherwise answer No. Do not accept it merely because it sounds "
+    "positive, moral, or related to the value."
+)
+
+SI_BIN_INSTR_NORMAL = (
+    "Judge whether the candidate directly gives the answer requested by the "
+    "question. Reply with exactly \"Answer: Yes\" or \"Answer: No\"."
 )
 SI_BIN_INSTR_NEGATIVE = (
     "The question asks you to select an incorrect, excluded, or inappropriate "
@@ -139,9 +161,8 @@ SI_BIN_INSTR_NEGATIVE = (
 )
 SI_BIN_INSTR_COT_NORMAL = (
     "First, briefly explain in English what the question asks and whether the "
-    "statement upholds or violates the value in a Sri Lankan context (max 80 "
-    "words). Then give your final judgment on the last line as \"Answer: Yes\" "
-    "or \"Answer: No\"."
+    "candidate directly gives the requested answer (max 80 words). Then give "
+    "your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
 )
 SI_BIN_INSTR_COT_NEGATIVE = (
     "First, briefly identify the negative or exclusion condition and whether "
@@ -150,9 +171,9 @@ SI_BIN_INSTR_COT_NEGATIVE = (
     "\"Answer: Yes\" or \"Answer: No\"."
 )
 
-# Backward-compatible names for callers that import the original constants.
-SI_BIN_INSTR_DIRECT = SI_BIN_INSTR_NORMAL
-SI_BIN_INSTR_COT = SI_BIN_INSTR_COT_NORMAL
+# Backward-compatible names preserve the original, non-routed prompt.
+SI_BIN_INSTR_DIRECT = SI_BIN_BASE_INSTR_DIRECT
+SI_BIN_INSTR_COT = SI_BIN_BASE_INSTR_COT
 
 # Specific question-level exclusion constructions. Do not match the bare
 # Sinhala prefix "නො", or unbounded "වැරදි" (which is contained in "නිවැරදි"),
@@ -327,11 +348,15 @@ def _summary_key(rec):
     return rec["value_english"]
 
 
-def build_messages(rec, mode="direct", si_statement=None, value_summaries="auto"):
+def build_messages(rec, mode="direct", si_statement=None, value_summaries="auto",
+                   si_negation_prompt=False):
     """Build chat messages for a processed record.
 
     For sri_lankan records, si_statement="A"|"B" selects the binary-decomposition
     prompt for that statement; si_statement=None gives the 4-way baseline prompt.
+    si_negation_prompt: when True, route negative/exclusion Sinhala questions
+      to SI_BIN_INSTR_NEGATIVE. The default False always uses the normal binary
+      instruction.
 
     value_summaries: controls the value-context block prepended to the user
     turn (per-country, keyed by the record's value category):
@@ -388,18 +413,24 @@ def build_messages(rec, mode="direct", si_statement=None, value_summaries="auto"
 
     if ds == "sri_lankan":
         if si_statement in ("A", "B"):
-            negative = is_si_negative_question(rec["question"])
-            if mode == "direct":
-                instr = (SI_BIN_INSTR_NEGATIVE if negative
-                         else SI_BIN_INSTR_NORMAL)
+            if si_negation_prompt:
+                negative = is_si_negative_question(rec["question"])
+                if mode == "direct":
+                    instr = (SI_BIN_INSTR_NEGATIVE if negative
+                             else SI_BIN_INSTR_NORMAL)
+                else:
+                    instr = (SI_BIN_INSTR_COT_NEGATIVE if negative
+                             else SI_BIN_INSTR_COT_NORMAL)
+                system = SI_BIN_SYSTEM
             else:
-                instr = (SI_BIN_INSTR_COT_NEGATIVE if negative
-                         else SI_BIN_INSTR_COT_NORMAL)
+                instr = (SI_BIN_BASE_INSTR_DIRECT if mode == "direct"
+                         else SI_BIN_BASE_INSTR_COT)
+                system = SI_BIN_BASE_SYSTEM
             user = SI_BIN_USER.format(
                 value_english=rec["value_english"], question=rec["question"],
                 statement=rec["options"][si_statement], instruction=instr)
             user = _with_context(user, SI_VALUE_CONTEXT_BLOCK)
-            return [{"role": "system", "content": SI_BIN_SYSTEM},
+            return [{"role": "system", "content": system},
                     {"role": "user", "content": user}]
         instr4 = SI_4WAY_INSTR_DIRECT if mode == "direct" else SI_4WAY_INSTR_COT
         user = SI_4WAY_USER.format(

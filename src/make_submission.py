@@ -181,7 +181,11 @@ def run_predict(args):
                     row = {"uid": rec["uid"], "dataset": ds, "probs": probs}
                 elif ds == "sri_lankan":
                     _, pa, pb = score_si(scorer, rec,
-                                         value_summaries=args.value_summaries)
+                                         value_summaries=args.value_summaries,
+                                         si_negation_prompt=getattr(
+                                             args,
+                                             "enable_si_negation_prompt",
+                                             False))
                     row = {"uid": rec["uid"], "dataset": ds,
                            "p_yes_A": pa, "p_yes_B": pb}
                 else:
@@ -302,6 +306,13 @@ def main():
     ap.add_argument("--si_mode", choices=["binary", "4way"], default="binary",
                     help="Sri Lankan scoring mode; must match the adapter's "
                          "training --si_mode. '4way' ignores --th_a/--th_b.")
+    ap.add_argument(
+        "--enable_si_negation_prompt",
+        action="store_true",
+        help="binary Sinhala only: use the specialized negative-question "
+             "instruction. Enable only when the SFT data was built with the "
+             "same flag.",
+    )
     ap.add_argument("--load_4bit", action="store_true")
     ap.add_argument("--load_8bit", action="store_true")
     ap.add_argument("--details", nargs="+", default=[],

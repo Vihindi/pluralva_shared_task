@@ -94,14 +94,17 @@ def permute_record(rec, shift):
 
 
 def make_example(rec, target_letter, rationales, rationale_key, si_statement=None,
-                 value_summaries="auto", meta_extra=None):
+                 value_summaries="auto", meta_extra=None,
+                 si_negation_prompt=False):
     messages = build_messages(rec, mode="direct", si_statement=si_statement,
-                              value_summaries=value_summaries)
+                              value_summaries=value_summaries,
+                              si_negation_prompt=si_negation_prompt)
     rat = rationales.get(rationale_key)
     if rat:
         assistant = f"{rat['text']}\nAnswer: {target_letter}"
         msgs = build_messages(rec, mode="cot", si_statement=si_statement,
-                              value_summaries=value_summaries)
+                              value_summaries=value_summaries,
+                              si_negation_prompt=si_negation_prompt)
         messages = msgs
     else:
         assistant = f"Answer: {target_letter}"
@@ -236,7 +239,8 @@ def build_indonesian(recs, rationales, n_perms, value_summaries="auto",
     return out
 
 
-def build_sri_lankan(recs, rationales, value_summaries="auto", si_mode="binary"):
+def build_sri_lankan(recs, rationales, value_summaries="auto",
+                     si_mode="binary", si_negation_prompt=False):
     out = []
     for rec in recs:
         if si_mode == "4way":
@@ -250,7 +254,8 @@ def build_sri_lankan(recs, rationales, value_summaries="auto", si_mode="binary")
                 target = "Yes" if ok else "No"
                 key = f"{rec['uid']}_{stmt}"
                 out.append(make_example(rec, target, rationales, key, si_statement=stmt,
-                                        value_summaries=value_summaries))
+                                        value_summaries=value_summaries,
+                                        si_negation_prompt=si_negation_prompt))
     return out
 
 
@@ -288,6 +293,13 @@ def main():
                          "Yes/No examples per item; '4way' makes one A/B/Both/0 "
                          "example per item (both statements shown). Must match the "
                          "--si_mode used for bootstrap_rationales.py and evaluate.py.")
+    ap.add_argument(
+        "--enable_si_negation_prompt",
+        action="store_true",
+        help="binary Sinhala only: route verified negative/exclusion questions "
+             "to the specialized instruction. Default: disabled; every row "
+             "uses the normal binary prompt.",
+    )
     ap.add_argument("--id_mode", choices=["probability", "majority"],
                     default="probability",
                     help="Indonesian target construction: 'probability' (default) "
@@ -366,7 +378,9 @@ def main():
     builders = {
         "zh": ("chinese.jsonl", lambda recs: build_chinese(recs, rationales, args.n_perms, vs)),
         "id": ("indonesian.jsonl", lambda recs: build_indonesian(recs, rationales, args.n_perms, vs, args.id_mode, reviewed)),
-        "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(recs, rationales, vs, args.si_mode)),
+        "si": ("sri_lankan.jsonl", lambda recs: build_sri_lankan(
+            recs, rationales, vs, args.si_mode,
+            args.enable_si_negation_prompt)),
     }
     rng = random.Random(SEED)
     summary = {}

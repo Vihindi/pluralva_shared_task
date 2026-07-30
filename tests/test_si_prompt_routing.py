@@ -6,7 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from prompts import (SI_BIN_INSTR_NEGATIVE, SI_BIN_INSTR_NORMAL,
+from prompts import (SI_BIN_BASE_INSTR_DIRECT, SI_BIN_BASE_SYSTEM,
+                     SI_BIN_INSTR_NEGATIVE, SI_BIN_INSTR_NORMAL, SI_BIN_SYSTEM,
                      build_messages, is_si_negative_question)
 
 
@@ -23,8 +24,11 @@ def si_record(question):
 class SinhalaBinaryPromptRoutingTests(unittest.TestCase):
     def test_normal_question_uses_normal_instruction(self):
         rec = si_record("නිවැරදි ක්‍රියාව කුමක්ද?")
-        user = build_messages(
-            rec, si_statement="A", value_summaries=None)[1]["content"]
+        messages = build_messages(
+            rec, si_statement="A", value_summaries=None,
+            si_negation_prompt=True)
+        user = messages[1]["content"]
+        self.assertEqual(messages[0]["content"], SI_BIN_SYSTEM)
         self.assertIn(SI_BIN_INSTR_NORMAL, user)
         self.assertNotIn(SI_BIN_INSTR_NEGATIVE, user)
 
@@ -34,8 +38,19 @@ class SinhalaBinaryPromptRoutingTests(unittest.TestCase):
         for statement in ("A", "B"):
             user = build_messages(
                 rec, si_statement=statement,
-                value_summaries=None)[1]["content"]
+                value_summaries=None,
+                si_negation_prompt=True)[1]["content"]
             self.assertIn(SI_BIN_INSTR_NEGATIVE, user)
+
+    def test_negative_prompt_is_disabled_by_default(self):
+        rec = si_record("මෙයින් නිවැරදි නොවන ප්‍රකාශය කුමක්ද?")
+        messages = build_messages(
+            rec, si_statement="A", value_summaries=None)
+        user = messages[1]["content"]
+        self.assertEqual(messages[0]["content"], SI_BIN_BASE_SYSTEM)
+        self.assertIn(SI_BIN_BASE_INSTR_DIRECT, user)
+        self.assertNotIn(SI_BIN_INSTR_NORMAL, user)
+        self.assertNotIn(SI_BIN_INSTR_NEGATIVE, user)
 
     def test_bare_no_prefix_is_not_a_router_rule(self):
         self.assertFalse(is_si_negative_question("නොහොත් වෙනත් පිළිතුර කුමක්ද?"))

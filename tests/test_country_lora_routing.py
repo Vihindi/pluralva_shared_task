@@ -39,7 +39,7 @@ def fake_score_mcq(scorer, rec, n_perms, value_summaries):
     return {"A": 0.7, "B": 0.1, "C": 0.1, "D": 0.1}
 
 
-def fake_score_si(scorer, rec, value_summaries):
+def fake_score_si(scorer, rec, value_summaries, **kwargs):
     scorer.mcq_calls.append((rec["dataset"], scorer.active, None))
     return "A", 0.9, 0.1
 
