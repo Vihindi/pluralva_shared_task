@@ -298,6 +298,19 @@ def main():
     action="store_true",
     help="Load the base model in 8-bit"
     )
+    ap.add_argument(
+        "--oversample_si_negation_3x",
+        action="store_true",
+        help="Sinhala-only training: repeat only rows whose UIDs occur in "
+             "--si_negation_data to 3x their original count. Default: "
+             "disabled.",
+    )
+    ap.add_argument(
+        "--si_negation_data",
+        default=str(ROOT / "negation_sinhala_data.jsonl"),
+        help="JSONL file containing the negation UIDs used by "
+             "--oversample_si_negation_3x",
+    )
     ap.add_argument("--eval_fold", type=int, default=None,
                     help="hold out this single CV fold as the validation set for "
                          "loss curves; pass the *_train_full.jsonl files with this")
@@ -331,6 +344,11 @@ def main():
 
     rows = load_examples(args.train_files)
     datasets_present = {row["dataset"] for row in rows}
+    if (args.oversample_si_negation_3x and
+            datasets_present != {"sri_lankan"}):
+        raise ValueError(
+            "--oversample_si_negation_3x is supported only when "
+            "--train_files contains monolingual Sinhala SFT data")
     mixed_batches = (
         not args.no_mixed_country_batches and
         {"chinese", "indonesian", "sri_lankan"}.issubset(datasets_present)
@@ -393,6 +411,43 @@ def main():
     feats, skipped = encode_all(rows)
     print(f"{len(feats)} training examples from {len(args.train_files)} file(s)"
           f" ({skipped} skipped as longer than {args.max_len} tokens)")
+    if args.oversample_si_negation_3x:
+        negation_path = Path(args.si_negation_data)
+        if not negation_path.exists():
+            raise FileNotFoundError(
+                f"missing Sinhala negation data: {negation_path}")
+        negation_uids = set()
+        with open(negation_path, encoding="utf-8") as f:
+            for line_no, line in enumerate(f, 1):
+                if not line.strip():
+                    continue
+                try:
+                    negation_row = json.loads(line)
+                except json.JSONDecodeError as e:
+                    raise ValueError(
+                        f"{negation_path}:{line_no}: invalid JSON: {e}") from e
+                uid = negation_row.get("uid")
+                if not isinstance(uid, str) or not uid:
+                    raise ValueError(
+                        f"{negation_path}:{line_no}: missing string uid")
+                if uid in negation_uids:
+                    raise ValueError(
+                        f"{negation_path}:{line_no}: duplicate uid {uid!r}")
+                negation_uids.add(uid)
+        negation_feats = [
+            feature for feature in feats
+            if feature.get("uid") in negation_uids
+        ]
+        if not negation_feats:
+            raise RuntimeError(
+                "none of the UIDs in --si_negation_data occur in the Sinhala "
+                "SFT rows; rebuild SFT with --si_dev_aug_files first")
+        original_count = len(feats)
+        feats = feats + negation_feats * 2
+        print(
+            f"Sinhala negation-only 3x oversampling: {len(negation_feats)} "
+            f"matching rows repeated to 3x; {original_count} -> "
+            f"{len(feats)} total training rows")
     extra_feats, extra_skipped = encode_all(extra_rows)
     if mixed_batches:
         print(
