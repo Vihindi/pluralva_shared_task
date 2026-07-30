@@ -1,0 +1,224 @@
+{
+  "method": "sinhala_binary_threshold_grid_search",
+  "details": [
+    "D:\\other\\plurva_LLM_shared_task\\Codebase\\processed\\si_test_pseudo_calibration_details.jsonl"
+  ],
+  "n_items": 797,
+  "gold_counts": {
+    "0": 69,
+    "A": 410,
+    "B": 127,
+    "Both": 191
+  },
+  "grid": {
+    "min": 0.01,
+    "max": 0.99,
+    "step": 0.01,
+    "values": 99,
+    "pairs_tested": 9801
+  },
+  "th_a": 0.46,
+  "th_b": 0.92,
+  "accuracy": 0.8782936010037641,
+  "correct": 700,
+  "prediction_counts": {
+    "0": 72,
+    "A": 435,
+    "B": 105,
+    "Both": 185
+  },
+  "default_0_5": {
+    "correct": 687,
+    "accuracy": 0.8619824341279799,
+    "prediction_counts": {
+      "0": 65,
+      "A": 399,
+      "B": 113,
+      "Both": 220
+    }
+  },
+  "absolute_improvement": 0.016311166875784155,
+  "top_results": [
+    {
+      "th_a": 0.46,
+      "th_b": 0.92,
+      "correct": 700,
+      "accuracy": 0.8782936010037641,
+      "prediction_counts": {
+        "0": 72,
+        "A": 435,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.45,
+      "th_b": 0.92,
+      "correct": 700,
+      "accuracy": 0.8782936010037641,
+      "prediction_counts": {
+        "0": 72,
+        "A": 435,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.44,
+      "th_b": 0.92,
+      "correct": 700,
+      "accuracy": 0.8782936010037641,
+      "prediction_counts": {
+        "0": 72,
+        "A": 435,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.5,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 73,
+        "A": 434,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.49,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 73,
+        "A": 434,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.48,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 73,
+        "A": 434,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.47,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 73,
+        "A": 434,
+        "B": 105,
+        "Both": 185
+      }
+    },
+    {
+      "th_a": 0.43,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 72,
+        "A": 435,
+        "B": 104,
+        "Both": 186
+      }
+    },
+    {
+      "th_a": 0.42,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 72,
+        "A": 435,
+        "B": 104,
+        "Both": 186
+      }
+    },
+    {
+      "th_a": 0.41,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 72,
+        "A": 435,
+        "B": 104,
+        "Both": 186
+      }
+    },
+    {
+      "th_a": 0.4,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 71,
+        "A": 436,
+        "B": 103,
+        "Both": 187
+      }
+    },
+    {
+      "th_a": 0.39,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 71,
+        "A": 436,
+        "B": 103,
+        "Both": 187
+      }
+    },
+    {
+      "th_a": 0.38,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 71,
+        "A": 436,
+        "B": 103,
+        "Both": 187
+      }
+    },
+    {
+      "th_a": 0.37,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 69,
+        "A": 438,
+        "B": 103,
+        "Both": 187
+      }
+    },
+    {
+      "th_a": 0.36,
+      "th_b": 0.92,
+      "correct": 699,
+      "accuracy": 0.877038895859473,
+      "prediction_counts": {
+        "0": 69,
+        "A": 438,
+        "B": 103,
+        "Both": 187
+      }
+    }
+  ],
+  "make_submission_args": "--th_a 0.46 --th_b 0.92"
+}
