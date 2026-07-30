@@ -26,12 +26,10 @@ Runs on a single 16-24GB GPU with --load_4bit (QLoRA), or 40GB+ in bf16.
       sft_data/id_train_full.jsonl sft_data/si_train_full.jsonl \
       --output_dir runs/joint_full --load_4bit
 
-The default joint full-data schedule mixes all countries in every optimizer
-update: 2 physical rows x 10 gradient-accumulation passes = 20 rows, composed
-of 9 Indonesian, 7 Chinese, and 4 Sri Lankan rows. Indonesian and Chinese UIDs
-are unique within the 20-row block. After the 3,160 primary Chinese cyclic
-rows are consumed, training draws from the separate 20-per-question remaining
-permutation file produced by build_sft_data.py.
+Pass --mixed_country_batches to mix all countries in every optimizer update:
+2 physical rows x 10 gradient-accumulation passes = 20 rows, composed of
+9 Indonesian, 7 Chinese, and 4 Sri Lankan rows. Without that option, joint
+training uses the default row-level shuffle.
 """
 import argparse
 import json
@@ -281,11 +279,16 @@ def main():
              "the primary Chinese rows are exhausted",
     )
     ap.add_argument(
+        "--mixed_country_batches",
+        action="store_true",
+        help="joint training only: explicitly enable 9-ID/7-ZH/4-SI optimizer "
+             "blocks. Default: disabled; use normal row-level shuffling.",
+    )
+    ap.add_argument(
         "--no_mixed_country_batches",
         action="store_true",
-        help="disable the joint 9-ID/7-ZH/4-SI optimizer blocks and use a "
-             "normal row-level shuffle (automatically used for per-country "
-             "training)",
+        help="deprecated compatibility flag; mixed-country batching is now "
+             "disabled by default",
     )
     ap.add_argument("--max_len", type=int, default=1536)
     ap.add_argument(
@@ -344,13 +347,17 @@ def main():
 
     rows = load_examples(args.train_files)
     datasets_present = {row["dataset"] for row in rows}
+    if args.mixed_country_batches and args.no_mixed_country_batches:
+        raise ValueError(
+            "Choose only one of --mixed_country_batches or "
+            "--no_mixed_country_batches")
     if (args.oversample_si_negation_3x and
             datasets_present != {"sri_lankan"}):
         raise ValueError(
             "--oversample_si_negation_3x is supported only when "
             "--train_files contains monolingual Sinhala SFT data")
     mixed_batches = (
-        not args.no_mixed_country_batches and
+        args.mixed_country_batches and
         {"chinese", "indonesian", "sri_lankan"}.issubset(datasets_present)
     )
     extra_rows = []
@@ -368,8 +375,11 @@ def main():
                 "  python src/build_sft_data.py --n_perms 4 "
                 "--only_zh_remaining_permutations")
         extra_rows = load_examples([extra_path])
-    elif not args.no_mixed_country_batches:
+    elif args.mixed_country_batches:
         print("not all three countries were supplied -> using normal "
+              "row-level shuffle")
+    else:
+        print("mixed-country batching disabled (default) -> using normal "
               "row-level shuffle")
 
     eval_rows = []
