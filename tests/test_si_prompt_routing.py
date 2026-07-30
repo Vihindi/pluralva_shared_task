@@ -54,6 +54,17 @@ class SinhalaBinaryPromptRoutingTests(unittest.TestCase):
             "ගුරුවරයෙකුගෙන් අපේක්ෂා නොකරන්නේ කුමක්ද?"
         ))
 
+    def test_false_statement_routes_to_negative_instruction(self):
+        self.assertTrue(is_si_negative_question(
+            "පහත ප්‍රකාශවලින් අසත්‍ය වන්නේ කුමක්ද?"
+        ))
+
+    def test_negative_fact_inside_a_normal_question_does_not_route(self):
+        self.assertFalse(is_si_negative_question(
+            "වනාන්තර කැපීම නොකළ යුතු බවට නීති පැනවීමෙන් "
+            "රජවරු බලාපොරොත්තු වූයේ කුමක්ද?"
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

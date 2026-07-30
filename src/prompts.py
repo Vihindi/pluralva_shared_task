@@ -108,12 +108,10 @@ SI_VALUE_CONTEXT_BLOCK = """Value context — common patterns in how Sri Lankan 
 # --- English (active) -------------------------------------------------------
 SI_BIN_SYSTEM = (
     "You are an assistant with deep familiarity with Sri Lankan societal values "
-    "across its Sinhalese, Tamil, Muslim and Burgher communities. Read the "
-    "Sinhala question and candidate statement carefully. Use the stated value "
-    "and Sri Lankan context, but focus on exactly what the question asks. "
-    "Answer Yes only when the candidate clearly and directly satisfies the "
-    "question; otherwise answer No. Do not accept it merely because it sounds "
-    "positive, moral, or related to the value."
+    "across its Sinhalese, Tamil, Muslim and Burgher communities. You will read "
+    "a question and one candidate statement, both in Sinhala. Judge whether the "
+    "statement is a correct and socially appropriate answer to the question "
+    "according to the given Sri Lankan value."
 )
 
 SI_BIN_USER = """Value being tested: {value_english}
@@ -127,19 +125,23 @@ Candidate statement (Sinhala):
 {instruction}"""
 
 SI_BIN_INSTR_NORMAL = (
-    "Judge whether the candidate directly gives the answer requested by the "
-    "question. Reply with exactly \"Answer: Yes\" or \"Answer: No\"."
+    "Reply with exactly one line: \"Answer: Yes\" if the statement is a "
+    "correct and appropriate answer to the question, or \"Answer: No\" if it "
+    "is not."
 )
 SI_BIN_INSTR_NEGATIVE = (
-    "This is a negative or exclusion question. Answer Yes only if the candidate "
-    "is the item requested as NOT correct, NOT appropriate, or excluded. Do not "
-    "judge it merely by whether it sounds socially good or bad. Reply with "
-    "exactly \"Answer: Yes\" or \"Answer: No\"."
+    "The question asks you to select an incorrect, excluded, or inappropriate "
+    "option. Answer Yes if choosing this candidate would correctly answer that "
+    "negative question, even when the candidate itself describes something "
+    "false or socially inappropriate. Otherwise answer No. For example, for "
+    "\"Which is NOT a benefit?\", answer Yes when the candidate is not a "
+    "benefit. Reply with exactly \"Answer: Yes\" or \"Answer: No\"."
 )
 SI_BIN_INSTR_COT_NORMAL = (
     "First, briefly explain in English what the question asks and whether the "
-    "candidate directly gives the requested answer (max 80 words). Then give "
-    "your final judgment on the last line as \"Answer: Yes\" or \"Answer: No\"."
+    "statement upholds or violates the value in a Sri Lankan context (max 80 "
+    "words). Then give your final judgment on the last line as \"Answer: Yes\" "
+    "or \"Answer: No\"."
 )
 SI_BIN_INSTR_COT_NEGATIVE = (
     "First, briefly identify the negative or exclusion condition and whether "
@@ -157,15 +159,17 @@ SI_BIN_INSTR_COT = SI_BIN_INSTR_COT_NORMAL
 # because both produce false routes in ordinary questions.
 SI_NEGATIVE_QUESTION_PATTERNS = (
     r"නොවන්නේ",
-    r"නො[\u0D80-\u0DFF\u200c\u200d]*න්නේ",
     r"නොවන\s+(?:කරුණ|ප්‍රකාශ|ක්‍රම|ක්‍රියා|පිළිතුර|ලක්ෂණ|අංග|අදහස|"
     r"හැසිරීම|වටිනාකම|සාධක)",
-    r"නොකළ\s+යුතු",
+    r"නොක[ළල]\s*යුතු\s+(?:කරුණ|ක්‍රියාව|දෙය|ප්‍රකාශ|වරණ)",
     r"නොගැළපෙන",
     r"අයත්\s+නොවන",
     r"නිවැරදි\s+නොවන",
-    r"(?:^|\s)වැරදි\s+ප්‍රකාශ",
-    r"(?:^|\s)අසත්‍ය\s+ප්‍රකාශ",
+    r"එකඟ\s+විය\s+නොහැකි\s+කරුණ",
+    r"අපේක්ෂා\s+නොකර(?:න්නේ|න)",
+    r"(?:^|\s)වැරදි(?:\s*\([^)]*\))?\s+(?:ප්‍රකාශ|පිළිවෙත්)",
+    r"(?:^|\s)සාවද්‍ය\s+(?:ප්‍රකාශ|ප්‍රකංශ)",
+    r"(?:^|\s)අසත්‍ය\s+(?:වන්නේ|ප්‍රකාශ)",
     r"\bnot\s+correct\b",
     r"\bincorrect\b",
     r"\bexcept\b",
