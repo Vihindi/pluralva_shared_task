@@ -276,6 +276,12 @@ def main():
                          "untouched; auxiliary items must already carry "
                          "fold=-1 so they train in every fold but are never "
                          "used for CV evaluation.")
+    ap.add_argument("--si_dev_aug_files", nargs="+", default=[],
+                    help="additional Sri Lankan dev augmentations to merge only "
+                         "while building SFT data (e.g. negated versions of dev "
+                         "questions). Each item must have a fold from 0 to 4; "
+                         "the item is excluded from the matching fold-specific "
+                         "training file to prevent CV leakage.")
     ap.add_argument("--n_perms", type=int, default=1,
                     help="cyclic option permutations for ZH/ID. DEFAULT 1 "
                          "(no augmentation); pass 4 to re-enable the 4x "
@@ -387,6 +393,30 @@ def main():
     for tag, (fname, build) in builders.items():
         recs = load_jsonl(processed / fname)
         n_main = len(recs)
+        n_dev_aug = 0
+        n_aux = 0
+        if tag == "si" and args.si_dev_aug_files:
+            known_uids = {r["uid"] for r in recs}
+            for aug_path in args.si_dev_aug_files:
+                aug_recs = load_jsonl(Path(aug_path))
+                collide = [r["uid"] for r in aug_recs if r["uid"] in known_uids]
+                if collide:
+                    raise SystemExit(f"dev augmentation file {aug_path!r} has "
+                                     f"colliding uids: {collide[:5]}")
+                invalid_folds = [
+                    (r.get("uid"), r.get("fold"))
+                    for r in aug_recs
+                    if r.get("fold") not in range(N_FOLDS)
+                ]
+                if invalid_folds:
+                    raise SystemExit(
+                        f"dev augmentation file {aug_path!r} must use folds "
+                        f"0..{N_FOLDS - 1}; invalid rows: {invalid_folds[:5]}")
+                recs.extend(aug_recs)
+                known_uids.update(r["uid"] for r in aug_recs)
+                n_dev_aug += len(aug_recs)
+                print(f"  merged {len(aug_recs)} Sri Lankan dev augmentations "
+                      f"from {aug_path!r}")
         if tag == "si" and args.si_aux_files:
             main_uids = {r["uid"] for r in recs}
             for aux_path in args.si_aux_files:
@@ -401,6 +431,7 @@ def main():
                           f"don't have fold=-1 — they will be excluded from some "
                           f"fold-specific training files: {non_neg_fold[:5]}")
                 recs = recs + aux_recs
+                n_aux += len(aux_recs)
                 print(f"  merged {len(aux_recs)} aux items from {aux_path!r}")
         examples = build(recs)
         rng.shuffle(examples)
@@ -421,15 +452,21 @@ def main():
             save_jsonl(fold_ex, out_dir / f"{tag}_train_fold{k}.jsonl")
         summary[tag] = {
             "source_items": len(recs), "main_items": n_main,
-            "aux_items": len(recs) - n_main, "train_full": len(examples),
+            "dev_augmentation_items": n_dev_aug, "aux_items": n_aux,
+            "train_full": len(examples),
             "with_rationale": sum(e["meta"]["with_rationale"] for e in examples),
             "per_fold_train": {k: sum(1 for e in examples if e["meta"]["fold"] != k)
                                for k in range(N_FOLDS)},
         }
         if tag == "zh" and args.n_perms == 4:
             summary[tag]["remaining_permutation_rows"] = len(extra_examples)
-        aux_note = (f" ({n_main} dev + {len(recs) - n_main} aux)"
-                    if len(recs) != n_main else "")
+        extra_parts = []
+        if n_dev_aug:
+            extra_parts.append(f"{n_dev_aug} dev augmentations")
+        if n_aux:
+            extra_parts.append(f"{n_aux} aux")
+        aux_note = (f" ({n_main} dev + {' + '.join(extra_parts)})"
+                    if extra_parts else "")
         print(f"[{tag}] {len(recs)} items{aux_note} -> {len(examples)} SFT examples "
               f"({summary[tag]['with_rationale']} with rationales)")
 

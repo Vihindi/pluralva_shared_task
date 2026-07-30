@@ -179,6 +179,12 @@ SI_BIN_INSTR_COT = SI_BIN_BASE_INSTR_COT
 # Sinhala prefix "නො", or unbounded "වැරදි" (which is contained in "නිවැරදි"),
 # because both produce false routes in ordinary questions.
 SI_NEGATIVE_QUESTION_PATTERNS = (
+    r"නොකළ\s+යුත්තේ",
+    r"නොකළ\s+යුතු\s+(?:කාර්ය|දෙය|ක්‍රියා|ප්‍රකාශ|වරණ)",
+    r"නොවිය\s+හැකි\s+(?:ආකාර|කරුණ|ක්‍රම)",
+    r"ප්‍රමුඛතාවය\s+නොදිය\s+යුතු",
+    r"වැරදිව\s+සඳහන්",
+    r"(?:^|\s)සාවද්‍ය\s+වන්නේ",
     r"නොවන්නේ",
     r"නොවන\s+(?:කරුණ|ප්‍රකාශ|ක්‍රම|ක්‍රියා|පිළිතුර|ලක්ෂණ|අංග|අදහස|"
     r"හැසිරීම|වටිනාකම|සාධක)",
