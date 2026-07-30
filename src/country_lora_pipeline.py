@@ -73,6 +73,13 @@ def build_arg_parser():
         help="expected Sri Lankan SFT target format; must match the "
              "--si_mode used by build_sft_data.py",
     )
+    ap.add_argument(
+        "--oversample_si_3x",
+        action="store_true",
+        help="repeat the encoded Sri Lankan training rows to 3x their original "
+             "count before shuffling. Default: disabled. Other countries are "
+             "never oversampled by this option.",
+    )
     ap.add_argument("--lora_r", type=int, default=16)
     ap.add_argument("--lora_alpha", type=int, default=32)
     ap.add_argument("--lora_dropout", type=float, default=0.05)
@@ -480,6 +487,7 @@ def run_train(args):
         "max_len": args.max_len,
         "selected_countries": [dataset for dataset, _, _ in selected_countries],
         "si_mode": args.si_mode,
+        "oversample_si_3x": args.oversample_si_3x,
         "adapters": {},
         "package_versions": package_versions(),
     }
@@ -498,14 +506,24 @@ def run_train(args):
         epochs = country_setting(args, prefix, "epochs")
         learning_rate = country_setting(args, prefix, "lr")
         rows = loaded_rows[dataset]
-        features, skipped = encode_rows(
+        base_features, skipped = encode_rows(
             tokenizer, processor, rows, args.max_len)
-        if not features:
+        if not base_features:
             raise RuntimeError(
                 f"{dataset}: every example exceeded --max_len {args.max_len}")
+        oversample_factor = (
+            3 if dataset == "sri_lankan" and args.oversample_si_3x else 1
+        )
+        features = base_features * oversample_factor
 
         print(f"\n[{dataset}] creating a fresh independent LoRA")
-        print(f"[{dataset}] {len(features)} encoded / {len(skipped)} skipped; "
+        row_note = (
+            f"{len(base_features)} encoded -> {len(features)} training rows "
+            f"(Sinhala 3x oversampling)"
+            if oversample_factor == 3
+            else f"{len(features)} encoded"
+        )
+        print(f"[{dataset}] {row_note} / {len(skipped)} skipped; "
               f"epochs={epochs}, lr={learning_rate}")
 
         peft_config = LoraConfig(
@@ -564,6 +582,8 @@ def run_train(args):
             "training_file": str(train_dir / filename),
             "source_rows": len(rows),
             "encoded_rows": len(features),
+            "encoded_rows_before_oversampling": len(base_features),
+            "oversample_factor": oversample_factor,
             "skipped_rows": len(skipped),
             "skipped_uids": skipped,
             "epochs": epochs,

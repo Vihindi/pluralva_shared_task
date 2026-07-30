@@ -109,6 +109,23 @@ class SftValidationTests(unittest.TestCase):
         self.assertEqual(args.countries, ["sri_lankan"])
         self.assertEqual(args.si_mode, "4way")
 
+    def test_sinhala_oversampling_is_disabled_by_default(self):
+        args = build_arg_parser().parse_args([
+            "train",
+            "--output_dir", "runs/test",
+            "--countries", "sri_lankan",
+        ])
+        self.assertFalse(args.oversample_si_3x)
+
+    def test_parser_can_enable_sinhala_three_times_oversampling(self):
+        args = build_arg_parser().parse_args([
+            "train",
+            "--output_dir", "runs/test",
+            "--countries", "sri_lankan",
+            "--oversample_si_3x",
+        ])
+        self.assertTrue(args.oversample_si_3x)
+
 
 class SubmissionRoutingTests(unittest.TestCase):
     def setUp(self):
