@@ -24,6 +24,11 @@ Four ways to use it:
        --si_adapter runs/country_lora/qwen35_4b_full/sri_lankan \
        --n_perms 4 --load_4bit
 
+   Supplying only one named adapter predicts only that country. This can also
+   be made explicit with --countries:
+   python src/make_submission.py predict --model MODEL --country_specific \
+       --si_adapter runs/sri_lankan --countries sri_lankan --load_4bit
+
 3) Compose from existing details (no GPU) — e.g. the 5 fold-adapter runs made
    with evaluate.py predict (their <out>.details.jsonl files), fold-ensembled:
    python src/make_submission.py compose \
@@ -33,7 +38,7 @@ Four ways to use it:
 4) Package an already-made predictions.jsonl (validate + zip only):
    python src/make_submission.py package --predictions predictions.jsonl
 
-Every path ends with a strict validation: exact coverage of all test IDs
+Every path ends with a strict validation: exact coverage of the selected test IDs
 (nothing missing, nothing extra, no duplicates), legal labels, exact key names.
 The zip contains predictions.jsonl at its root, as Codabench expects.
 """
@@ -53,6 +58,12 @@ DATASET_NAMES = {"chinese": "chinese", "indonesian": "indonesian",
 TEST_FILES = {"chinese": "chinese_test_without_gold.jsonl",
               "indonesian": "indonesian_test_without_gold.jsonl",
               "sri_lankan": "sri_lankan_test_without_gold.jsonl"}
+COUNTRIES = tuple(TEST_FILES)
+ADAPTER_ATTRS = {
+    "chinese": "zh_adapter",
+    "indonesian": "id_adapter",
+    "sri_lankan": "si_adapter",
+}
 
 
 def load_jsonl(path):
@@ -60,10 +71,11 @@ def load_jsonl(path):
         return [json.loads(line) for line in f if line.strip()]
 
 
-def test_ids(test_dir):
+def test_ids(test_dir, datasets=None):
     """dataset -> ordered list of test IDs (the coverage ground truth)."""
     out = {}
-    for ds, fname in TEST_FILES.items():
+    for ds in datasets or COUNTRIES:
+        fname = TEST_FILES[ds]
         p = Path(test_dir) / fname
         if not p.exists():
             raise SystemExit(f"missing test file: {p}")
@@ -142,9 +154,8 @@ def run_predict(args):
     country_adapters = None
     if args.country_specific:
         country_adapters = {
-            "chinese": args.zh_adapter,
-            "indonesian": args.id_adapter,
-            "sri_lankan": args.si_adapter,
+            ds: getattr(args, ADAPTER_ATTRS[ds])
+            for ds in args.selected_datasets
         }
     scorer = Scorer(
         args.model,
@@ -154,7 +165,8 @@ def run_predict(args):
         load_8bit=args.load_8bit,
     )
     with open(details_path, "a", encoding="utf-8") as details:
-        for ds, fname in TEST_FILES.items():
+        for ds in args.selected_datasets:
+            fname = TEST_FILES[ds]
             if args.country_specific:
                 scorer.set_adapter(ds)
                 print(f"[{ds}] active adapter: {country_adapters[ds]}")
@@ -256,14 +268,25 @@ def main():
     ap.add_argument("--model", default="Qwen/Qwen3-8B")
     ap.add_argument("--adapter", default=None)
     ap.add_argument("--country_specific", action="store_true",
-                    help="predict with separate Chinese, Indonesian, and Sri "
-                         "Lankan adapters; requires all three adapter paths")
+                    help="predict with routed country adapters; when "
+                         "--countries is omitted, the supplied --zh_adapter/"
+                         "--id_adapter/--si_adapter flags determine which "
+                         "countries are processed")
     ap.add_argument("--zh_adapter", default=None,
                     help="Chinese adapter path for --country_specific")
     ap.add_argument("--id_adapter", default=None,
                     help="Indonesian adapter path for --country_specific")
     ap.add_argument("--si_adapter", default=None,
                     help="Sri Lankan binary adapter path for --country_specific")
+    ap.add_argument(
+        "--countries",
+        nargs="+",
+        choices=COUNTRIES,
+        default=None,
+        help="process only these countries. In country-specific mode this is "
+             "optional: supplying only --si_adapter, for example, selects only "
+             "sri_lankan automatically",
+    )
     ap.add_argument("--test_dir", default=str(ROOT / "PlurVA-LLM_Test_Set"))
     ap.add_argument("--processed_dir", default=str(ROOT / "processed"))
     ap.add_argument("--out_dir", default=str(ROOT / "submission"))
@@ -296,10 +319,10 @@ def main():
     args = ap.parse_args()
     if args.load_4bit and args.load_8bit:
         raise ValueError("Cannot use both --load_4bit and --load_8bit")
-    country_paths = {
-        "--zh_adapter": args.zh_adapter,
-        "--id_adapter": args.id_adapter,
-        "--si_adapter": args.si_adapter,
+    adapter_flags = {
+        "chinese": ("--zh_adapter", args.zh_adapter),
+        "indonesian": ("--id_adapter", args.id_adapter),
+        "sri_lankan": ("--si_adapter", args.si_adapter),
     }
     if args.country_specific:
         if args.mode != "predict":
@@ -307,22 +330,51 @@ def main():
         if args.adapter:
             raise ValueError(
                 "--adapter and --country_specific are mutually exclusive")
-        missing = [flag for flag, path in country_paths.items() if not path]
+        supplied = [ds for ds, (_, path) in adapter_flags.items() if path]
+        if args.countries:
+            args.selected_datasets = list(dict.fromkeys(args.countries))
+            unused = [
+                flag for ds, (flag, path) in adapter_flags.items()
+                if path and ds not in args.selected_datasets
+            ]
+            if unused:
+                raise ValueError(
+                    "adapter supplied for a country not selected by "
+                    f"--countries: {', '.join(unused)}")
+        else:
+            args.selected_datasets = supplied
+        if not args.selected_datasets:
+            raise ValueError(
+                "--country_specific requires at least one of --zh_adapter, "
+                "--id_adapter, or --si_adapter")
+        missing = [
+            adapter_flags[ds][0] for ds in args.selected_datasets
+            if not adapter_flags[ds][1]
+        ]
         if missing:
             raise ValueError(
-                "--country_specific requires " + ", ".join(missing))
-        nonexistent = [f"{flag}={path}" for flag, path in country_paths.items()
-                       if not Path(path).exists()]
+                "selected countries require " + ", ".join(missing))
+        nonexistent = [
+            f"{adapter_flags[ds][0]}={adapter_flags[ds][1]}"
+            for ds in args.selected_datasets
+            if not Path(adapter_flags[ds][1]).exists()
+        ]
         if nonexistent:
             raise FileNotFoundError(
                 "country adapter path(s) not found: " + ", ".join(nonexistent))
-        if args.si_mode != "binary":
+        if ("sri_lankan" in args.selected_datasets and
+                args.si_mode != "binary"):
             raise ValueError(
-                "--country_specific requires --si_mode binary because the "
-                "Sri Lankan adapter uses statement-level Yes/No training")
-    elif any(country_paths.values()):
+                "the routed Sri Lankan adapter requires --si_mode binary "
+                "because it uses statement-level Yes/No training")
+    elif any(path for _, path in adapter_flags.values()):
         raise ValueError(
             "--zh_adapter/--id_adapter/--si_adapter require --country_specific")
+    else:
+        args.selected_datasets = (
+            list(dict.fromkeys(args.countries))
+            if args.countries else list(COUNTRIES)
+        )
     if args.no_value_summaries:
         args.value_summaries = None
         print("value-context injection: DISABLED (--no_value_summaries)")
@@ -337,7 +389,7 @@ def main():
         print("value-context injection: AUTO (zh/id/si_value_summaries.json "
               "at repo root, per country)")
 
-    ids_by_ds = test_ids(args.test_dir)
+    ids_by_ds = test_ids(args.test_dir, args.selected_datasets)
     total = sum(len(v) for v in ids_by_ds.values())
     print(f"test set: {total} items "
           f"({', '.join(f'{k}={len(v)}' for k, v in ids_by_ds.items())})")

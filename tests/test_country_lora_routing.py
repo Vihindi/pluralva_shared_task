@@ -137,6 +137,8 @@ class SubmissionRoutingTests(unittest.TestCase):
             si_mode="binary",
             value_summaries="auto",
             n_perms=4,
+            selected_datasets=[
+                "chinese", "indonesian", "sri_lankan"],
         )
 
     def test_country_specific_switches_before_each_group_and_keeps_permutations(self):
@@ -185,6 +187,26 @@ class SubmissionRoutingTests(unittest.TestCase):
                 ("indonesian", None, 4),
             ],
         )
+
+    def test_only_sri_lankan_adapter_scores_only_sri_lankan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.args(Path(tmp), country_specific=True)
+            args.zh_adapter = None
+            args.id_adapter = None
+            args.selected_datasets = ["sri_lankan"]
+            merged = make_submission.run_predict(args)
+
+        scorer = FakeScorer.instances[-1]
+        self.assertEqual(
+            scorer.adapters,
+            {"sri_lankan": "runs/si"},
+        )
+        self.assertEqual(scorer.activations, ["sri_lankan"])
+        self.assertEqual(
+            scorer.mcq_calls,
+            [("sri_lankan", "sri_lankan", None)],
+        )
+        self.assertEqual(set(merged), {"sri_lankan-1"})
 
 
 if __name__ == "__main__":
