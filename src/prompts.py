@@ -162,10 +162,11 @@ SI_BIN_INSTR_COT = (
 # ---------------------------------------------- Sri Lankan (4-way, baseline) -
 # --- English original (kept for reference / easy revert) -------------------
 SI_4WAY_SYSTEM = (
-    "You are a Sri Lankan. Answer based on Sri Lankan Sinhalese Buddhist "
-    "customs, traditions, culture, and social and societal norms. "
-    "Evaluate each statement independently against exactly what the question "
-    "asks. Follow the output rule strictly."
+    "You will receive a Sinhala question and two candidate statements. "
+    "Using the stated Sri Lankan value as context, judge whether each statement "
+    "fully and directly answers exactly what the question asks. A statement "
+    "that is merely related, positive-sounding, partly correct, or incomplete "
+    "is incorrect. Do not force a choice."
 )
 
 SI_4WAY_USER = """Value being tested: {value_english}
@@ -182,16 +183,16 @@ Statement B (Sinhala):
 {instruction}"""
 
 _SI_4WAY_CHOICES = (
-    "Choose:\n"
-    "A = only A is correct\n"
-    "B = only B is correct\n"
-    "Both = both are correct\n"
-    "0 = neither is correct\n\n"
-    "Answer the exact question, including negative wording. Choose Both only if "
-    "each statement is independently correct.")
+    "Evaluate A and B separately using the same strict standard.\n"
+    "A = only A fully and correctly answers the question\n"
+    "B = only B fully and correctly answers the question\n"
+    "Both = A and B each independently give a complete correct answer\n"
+    "0 = neither statement gives a complete correct answer\n\n"
+    "Choose 0 when neither statement meets the standard. Do not select A or B "
+    "only because it is more plausible than the other.")
 
 SI_4WAY_INSTR_DIRECT = (
-    _SI_4WAY_CHOICES + " Reply with exactly one line, one of: "
+    _SI_4WAY_CHOICES + "\nReply with exactly one line, one of: "
     "\"Answer: A\", \"Answer: B\", \"Answer: Both\", or \"Answer: 0\".")
 
 SI_4WAY_INSTR_COT = (
