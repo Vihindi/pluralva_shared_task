@@ -277,7 +277,9 @@ def main():
     ap.add_argument("--id_adapter", default=None,
                     help="Indonesian adapter path for --country_specific")
     ap.add_argument("--si_adapter", default=None,
-                    help="Sri Lankan binary adapter path for --country_specific")
+                    help="Sri Lankan binary or four-way adapter path for "
+                         "--country_specific; select its target format with "
+                         "--si_mode")
     ap.add_argument(
         "--countries",
         nargs="+",
@@ -362,11 +364,6 @@ def main():
         if nonexistent:
             raise FileNotFoundError(
                 "country adapter path(s) not found: " + ", ".join(nonexistent))
-        if ("sri_lankan" in args.selected_datasets and
-                args.si_mode != "binary"):
-            raise ValueError(
-                "the routed Sri Lankan adapter requires --si_mode binary "
-                "because it uses statement-level Yes/No training")
     elif any(path for _, path in adapter_flags.values()):
         raise ValueError(
             "--zh_adapter/--id_adapter/--si_adapter require --country_specific")

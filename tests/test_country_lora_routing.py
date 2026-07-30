@@ -44,8 +44,9 @@ def fake_score_si(scorer, rec, value_summaries):
     return "A", 0.9, 0.1
 
 
-def fake_score_si_4way(*args, **kwargs):
-    raise AssertionError("country-specific routing must use binary SI scoring")
+def fake_score_si_4way(scorer, rec, value_summaries):
+    scorer.mcq_calls.append((rec["dataset"], scorer.active, "4way"))
+    return {"A": 0.1, "B": 0.1, "Both": 0.7, "0": 0.1}
 
 
 def fake_evaluate_module():
@@ -207,6 +208,24 @@ class SubmissionRoutingTests(unittest.TestCase):
             [("sri_lankan", "sri_lankan", None)],
         )
         self.assertEqual(set(merged), {"sri_lankan-1"})
+
+    def test_only_sri_lankan_adapter_supports_four_way_scoring(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.args(Path(tmp), country_specific=True)
+            args.zh_adapter = None
+            args.id_adapter = None
+            args.selected_datasets = ["sri_lankan"]
+            args.si_mode = "4way"
+            merged = make_submission.run_predict(args)
+
+        scorer = FakeScorer.instances[-1]
+        self.assertEqual(scorer.activations, ["sri_lankan"])
+        self.assertEqual(
+            scorer.mcq_calls,
+            [("sri_lankan", "sri_lankan", "4way")],
+        )
+        self.assertEqual(
+            merged["sri_lankan-1"]["probs"]["Both"], 0.7)
 
 
 if __name__ == "__main__":
