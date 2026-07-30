@@ -132,7 +132,7 @@ def build_parser():
     parser.add_argument(
         "--save_steps",
         type=int,
-        default=175,
+        default=25,
         help="save a resumable checkpoint every N optimizer steps",
     )
     parser.add_argument(
@@ -228,7 +228,7 @@ def main():
 
     model = AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
         attn_implementation=args.attn_implementation,
     )
@@ -277,7 +277,6 @@ def main():
         save_strategy="steps",
         save_steps=args.save_steps,
         save_total_limit=args.save_total_limit,
-        save_safetensors=True,
         seed=args.seed,
         data_seed=args.seed,
         report_to="none",

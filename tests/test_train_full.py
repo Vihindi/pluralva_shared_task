@@ -20,7 +20,7 @@ def test_full_finetuning_defaults_are_the_one_run_configuration():
     assert args.max_len == 1536
     assert args.warmup_ratio == 0.05
     assert args.weight_decay == 0.01
-    assert args.save_steps == 175
+    assert args.save_steps == 25
     assert args.save_total_limit == 3
     assert not hasattr(args, "mixed_country_batches")
     assert not hasattr(args, "oversample_si_negation_3x")
