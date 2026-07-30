@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 import make_submission
-from country_lora_pipeline import build_arg_parser, load_and_validate_sft
+from country_lora_pipeline import (apply_si_oversampling, build_arg_parser,
+                                   load_and_validate_sft, validate_args)
 
 
 class FakeScorer:
@@ -125,6 +126,47 @@ class SftValidationTests(unittest.TestCase):
             "--oversample_si_3x",
         ])
         self.assertTrue(args.oversample_si_3x)
+
+    def test_parser_can_enable_negation_only_oversampling(self):
+        args = build_arg_parser().parse_args([
+            "train",
+            "--output_dir", "runs/test",
+            "--countries", "sri_lankan",
+            "--oversample_si_negation_3x",
+        ])
+        self.assertTrue(args.oversample_si_negation_3x)
+        self.assertFalse(args.oversample_si_3x)
+
+    def test_sinhala_oversampling_modes_are_mutually_exclusive(self):
+        args = build_arg_parser().parse_args([
+            "train",
+            "--output_dir", "runs/test",
+            "--countries", "sri_lankan",
+            "--oversample_si_3x",
+            "--oversample_si_negation_3x",
+        ])
+        with self.assertRaisesRegex(ValueError, "Choose only one"):
+            validate_args(args)
+
+    def test_negation_only_oversampling_repeats_only_selected_uids(self):
+        features = [
+            {"uid": "SI-normal", "input_ids": [1]},
+            {"uid": "SI-negative", "input_ids": [2]},
+        ]
+        rows, mode, selected = apply_si_oversampling(
+            features,
+            "sri_lankan",
+            oversample_all=False,
+            oversample_negation=True,
+            negation_uids={"SI-negative"},
+        )
+        self.assertEqual(mode, "negation_only_3x")
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(
+            [row["uid"] for row in rows].count("SI-negative"), 3)
+        self.assertEqual(
+            [row["uid"] for row in rows].count("SI-normal"), 1)
 
 
 class SubmissionRoutingTests(unittest.TestCase):

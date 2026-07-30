@@ -80,6 +80,19 @@ def build_arg_parser():
              "count before shuffling. Default: disabled. Other countries are "
              "never oversampled by this option.",
     )
+    ap.add_argument(
+        "--oversample_si_negation_3x",
+        action="store_true",
+        help="repeat only Sri Lankan SFT rows whose UIDs occur in "
+             "--si_negation_data to 3x their original count. Default: "
+             "disabled.",
+    )
+    ap.add_argument(
+        "--si_negation_data",
+        default=str(ROOT / "negation_sinhala_data.jsonl"),
+        help="JSONL file defining the negation UIDs used by "
+             "--oversample_si_negation_3x",
+    )
     ap.add_argument("--lora_r", type=int, default=16)
     ap.add_argument("--lora_alpha", type=int, default=32)
     ap.add_argument("--lora_dropout", type=float, default=0.05)
@@ -112,6 +125,10 @@ def build_arg_parser():
 def validate_args(args):
     if args.load_4bit and args.load_8bit:
         raise ValueError("Choose only one of --load_4bit or --load_8bit")
+    if args.oversample_si_3x and args.oversample_si_negation_3x:
+        raise ValueError(
+            "Choose only one of --oversample_si_3x or "
+            "--oversample_si_negation_3x")
     if args.lora_r <= 0 or args.lora_alpha <= 0:
         raise ValueError("LoRA rank and alpha must be positive")
     if not 0 <= args.lora_dropout < 1:
@@ -131,6 +148,51 @@ def validate_args(args):
     if args.logging_steps <= 0 or args.save_steps < 0:
         raise ValueError("--logging_steps must be positive and --save_steps "
                          "cannot be negative")
+
+
+def load_negation_uids(path):
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"missing Sinhala negation data: {path}")
+    uids = set()
+    with open(path, encoding="utf-8") as f:
+        for line_no, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"{path}:{line_no}: invalid JSON: {e}") from e
+            uid = row.get("uid")
+            if not isinstance(uid, str) or not uid:
+                raise ValueError(f"{path}:{line_no}: missing string uid")
+            if uid in uids:
+                raise ValueError(f"{path}:{line_no}: duplicate uid {uid!r}")
+            uids.add(uid)
+    if not uids:
+        raise ValueError(f"{path}: no negation UIDs")
+    return uids
+
+
+def apply_si_oversampling(features, dataset, oversample_all,
+                          oversample_negation, negation_uids):
+    mode = "disabled"
+    selected = []
+    if dataset == "sri_lankan" and oversample_all:
+        mode = "all_si_3x"
+        selected = features
+    elif dataset == "sri_lankan" and oversample_negation:
+        mode = "negation_only_3x"
+        selected = [
+            feature for feature in features
+            if feature.get("uid") in negation_uids
+        ]
+        if not selected:
+            raise RuntimeError(
+                "none of the UIDs in --si_negation_data occur in the encoded "
+                "Sinhala SFT rows; rebuild SFT with --si_dev_aug_files or "
+                "check the supplied file")
+    return features + selected * 2, mode, selected
 
 
 def load_and_validate_sft(path, expected_dataset, si_mode="binary"):
@@ -333,6 +395,7 @@ def encode_rows(tok, processor, rows, max_len):
         features.append({
             "input_ids": input_ids,
             "labels": [-100] * len(prompt_ids) + target_ids,
+            "uid": row.get("uid"),
         })
     return features, skipped
 
@@ -394,6 +457,10 @@ def run_train(args):
     selected_countries = [
         country for country in COUNTRIES if country[0] in selected
     ]
+    negation_uids = (
+        load_negation_uids(args.si_negation_data)
+        if args.oversample_si_negation_3x else set()
+    )
 
     loaded_rows = {}
     output_paths = {}
@@ -488,6 +555,11 @@ def run_train(args):
         "selected_countries": [dataset for dataset, _, _ in selected_countries],
         "si_mode": args.si_mode,
         "oversample_si_3x": args.oversample_si_3x,
+        "oversample_si_negation_3x": args.oversample_si_negation_3x,
+        "si_negation_data": (
+            str(Path(args.si_negation_data))
+            if args.oversample_si_negation_3x else None
+        ),
         "adapters": {},
         "package_versions": package_versions(),
     }
@@ -511,18 +583,30 @@ def run_train(args):
         if not base_features:
             raise RuntimeError(
                 f"{dataset}: every example exceeded --max_len {args.max_len}")
-        oversample_factor = (
-            3 if dataset == "sri_lankan" and args.oversample_si_3x else 1
+        features, oversampling_mode, oversampled_base_rows = (
+            apply_si_oversampling(
+                base_features,
+                dataset,
+                args.oversample_si_3x,
+                args.oversample_si_negation_3x,
+                negation_uids,
+            )
         )
-        features = base_features * oversample_factor
 
         print(f"\n[{dataset}] creating a fresh independent LoRA")
-        row_note = (
-            f"{len(base_features)} encoded -> {len(features)} training rows "
-            f"(Sinhala 3x oversampling)"
-            if oversample_factor == 3
-            else f"{len(features)} encoded"
-        )
+        if oversampling_mode == "all_si_3x":
+            row_note = (
+                f"{len(base_features)} encoded -> {len(features)} training "
+                "rows (all Sinhala rows repeated to 3x)"
+            )
+        elif oversampling_mode == "negation_only_3x":
+            row_note = (
+                f"{len(base_features)} encoded -> {len(features)} training "
+                f"rows ({len(oversampled_base_rows)} negation rows repeated "
+                "to 3x)"
+            )
+        else:
+            row_note = f"{len(features)} encoded"
         print(f"[{dataset}] {row_note} / {len(skipped)} skipped; "
               f"epochs={epochs}, lr={learning_rate}")
 
@@ -583,7 +667,11 @@ def run_train(args):
             "source_rows": len(rows),
             "encoded_rows": len(features),
             "encoded_rows_before_oversampling": len(base_features),
-            "oversample_factor": oversample_factor,
+            "oversampling_mode": oversampling_mode,
+            "oversampled_base_rows": len(oversampled_base_rows),
+            "oversample_repeat_factor": (
+                3 if oversampled_base_rows else 1
+            ),
             "skipped_rows": len(skipped),
             "skipped_uids": skipped,
             "epochs": epochs,
