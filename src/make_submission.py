@@ -9,14 +9,12 @@ Four ways to use it:
 1) Predict with one model/adapter (GPU; resumable — reruns skip finished items):
    python src/make_submission.py predict \
        --model meta-llama/Llama-3.1-8B-Instruct --adapter runs/joint_full \
-       --n_perms 4 --zh_prior_tau 0.4 --id_prior_tau 0.0 \
-       --th_a 0.5 --th_b 0.5 --load_4bit
+       --n_perms 4 --th_a 0.5 --th_b 0.5 --load_4bit
 
    Raw probabilities are checkpointed to submission/test_details.jsonl after
    every item, so a Colab disconnect costs nothing: rerun the same command and
-   it resumes. Calibration (--zh_prior_tau/--id_prior_tau/--th_a/--th_b, from
-   tune_calibration.py) is applied at composition time from the saved raw
-   probabilities. The older --prior_tau remains a shared fallback.
+   it resumes. Sinhala calibration (--th_a/--th_b, from tune_calibration.py)
+   is applied at composition time from the saved raw probabilities.
 
 2) Predict with three routed country adapters (one shared base-model load):
    python src/make_submission.py predict \
@@ -35,7 +33,7 @@ Four ways to use it:
    with evaluate.py predict (their <out>.details.jsonl files), fold-ensembled:
    python src/make_submission.py compose \
        --details pred_fold0.jsonl.details.jsonl ... pred_fold4.jsonl.details.jsonl \
-       --zh_prior_tau 0.4 --id_prior_tau 0.0 --th_a 0.5 --th_b 0.5
+       --th_a 0.5 --th_b 0.5
 
 4) Package an already-made predictions.jsonl (validate + zip only):
    python src/make_submission.py package --predictions predictions.jsonl
@@ -86,47 +84,14 @@ def test_ids(test_dir, datasets=None):
 
 
 def dev_priors(processed_dir):
-    """Full-dev priors used when composing hidden-test answers.
-
-    Chinese has one gold label per item. Indonesian averages every annotator
-    vote distribution so ties and minority judgments are preserved.
-    """
     priors = {}
     for ds in ("chinese", "indonesian"):
         p = Path(processed_dir) / f"{ds}.jsonl"
         if p.exists():
-            rows = load_jsonl(p)
-            totals = {label: 0.0 for label in LETTERS4}
-            if ds == "indonesian" and all(
-                isinstance(row.get("vote_dist"), dict) for row in rows
-            ):
-                for row in rows:
-                    for label in LETTERS4:
-                        totals[label] += float(
-                            row["vote_dist"].get(label, 0.0)
-                        )
-            else:
-                for row in rows:
-                    totals[row["gold"]] += 1.0
-            total = sum(totals.values())
-            if total <= 0:
-                raise ValueError(f"{p}: label prior has zero mass")
-            priors[ds] = {
-                label: totals[label] / total for label in LETTERS4
-            }
+            c = collections.Counter(r["gold"] for r in load_jsonl(p))
+            n = sum(c.values())
+            priors[ds] = {k: v / n for k, v in c.items()}
     return priors
-
-
-def prior_tau_for_dataset(args, dataset):
-    """Country override with backward-compatible shared-tau fallback."""
-    override_name = {
-        "chinese": "zh_prior_tau",
-        "indonesian": "id_prior_tau",
-    }.get(dataset)
-    override = (
-        getattr(args, override_name, None) if override_name is not None else None
-    )
-    return args.prior_tau if override is None else override
 
 
 def decide(row, priors, args):
@@ -138,9 +103,8 @@ def decide(row, priors, args):
         return "Both" if (a and b) else "A" if a else "B" if b else "0"
     probs = dict(row["probs"])
     prior = priors.get(row["dataset"])
-    prior_tau = prior_tau_for_dataset(args, row["dataset"])
-    if prior and prior_tau > 0:
-        probs = {k: v * (prior.get(k, 1e-9) ** prior_tau)
+    if prior and args.prior_tau > 0:
+        probs = {k: v * (prior.get(k, 1e-9) ** args.prior_tau)
                  for k, v in probs.items()}
     return max(probs, key=probs.get)
 
@@ -334,12 +298,8 @@ def main():
     ap.add_argument("--out_dir", default=str(ROOT / "submission"))
     ap.add_argument("--n_perms", type=int, default=4)
     ap.add_argument("--prior_tau", type=float, default=0.0,
-                    help="backward-compatible shared Chinese/Indonesian tau; "
-                         "country-specific arguments override it")
-    ap.add_argument("--zh_prior_tau", type=float, default=None,
-                    help="Chinese prior strength from tune_calibration.py")
-    ap.add_argument("--id_prior_tau", type=float, default=None,
-                    help="Indonesian prior strength from tune_calibration.py")
+                    help="optional shared Chinese/Indonesian prior strength "
+                         "(0 = off; not tuned by tune_calibration.py)")
     ap.add_argument("--th_a", type=float, default=0.5,
                     help="binary SI only: statement-A Yes cutoff")
     ap.add_argument("--th_b", type=float, default=0.5,
@@ -373,10 +333,6 @@ def main():
     args = ap.parse_args()
     if args.load_4bit and args.load_8bit:
         raise ValueError("Cannot use both --load_4bit and --load_8bit")
-    for name in ("prior_tau", "zh_prior_tau", "id_prior_tau"):
-        value = getattr(args, name)
-        if value is not None and value < 0:
-            raise ValueError(f"--{name} must be non-negative")
     adapter_flags = {
         "chinese": ("--zh_adapter", args.zh_adapter),
         "indonesian": ("--id_adapter", args.id_adapter),
