@@ -33,7 +33,7 @@ Four ways to use it:
    with evaluate.py predict (their <out>.details.jsonl files), fold-ensembled:
    python src/make_submission.py compose \
        --details pred_fold0.jsonl.details.jsonl ... pred_fold4.jsonl.details.jsonl \
-       --th_a 0.5 --th_b 0.5
+       --th_b 0.92 --th_a_if_b_no 0.16 --th_a_if_b_yes 0.50
 
 4) Package an already-made predictions.jsonl (validate + zip only):
    python src/make_submission.py package --predictions predictions.jsonl
@@ -98,8 +98,14 @@ def decide(row, priors, args):
     """Averaged/raw details row -> final label, applying calibration once."""
     # binary SI stores p_yes_A/p_yes_B; 4-way SI and all MCQ store a probs dict
     if row["dataset"] == "sri_lankan" and "p_yes_A" in row:
-        a = row["p_yes_A"] >= args.th_a
         b = row["p_yes_B"] >= args.th_b
+        th_a_if_b_no = getattr(args, "th_a_if_b_no", None)
+        th_a_if_b_yes = getattr(args, "th_a_if_b_yes", None)
+        if th_a_if_b_no is not None and th_a_if_b_yes is not None:
+            th_a = th_a_if_b_yes if b else th_a_if_b_no
+        else:
+            th_a = args.th_a
+        a = row["p_yes_A"] >= th_a
         return "Both" if (a and b) else "A" if a else "B" if b else "0"
     probs = dict(row["probs"])
     prior = priors.get(row["dataset"])
@@ -301,9 +307,22 @@ def main():
                     help="optional shared Chinese/Indonesian prior strength "
                          "(0 = off; not tuned by tune_calibration.py)")
     ap.add_argument("--th_a", type=float, default=0.5,
-                    help="binary SI only: statement-A Yes cutoff")
+                    help="binary SI only: global statement-A Yes cutoff; "
+                         "ignored when both conditional A cutoffs are supplied")
     ap.add_argument("--th_b", type=float, default=0.5,
                     help="binary SI only: statement-B Yes cutoff")
+    ap.add_argument(
+        "--th_a_if_b_no",
+        type=float,
+        default=None,
+        help="binary SI only: conditional A cutoff when B is predicted No",
+    )
+    ap.add_argument(
+        "--th_a_if_b_yes",
+        type=float,
+        default=None,
+        help="binary SI only: conditional A cutoff when B is predicted Yes",
+    )
     ap.add_argument("--si_mode", choices=["binary", "4way"], default="binary",
                     help="Sri Lankan scoring mode; must match the adapter's "
                          "training --si_mode. '4way' ignores --th_a/--th_b.")
@@ -333,6 +352,18 @@ def main():
     args = ap.parse_args()
     if args.load_4bit and args.load_8bit:
         raise ValueError("Cannot use both --load_4bit and --load_8bit")
+    conditional_a = (
+        args.th_a_if_b_no is not None,
+        args.th_a_if_b_yes is not None,
+    )
+    if conditional_a[0] != conditional_a[1]:
+        raise ValueError(
+            "--th_a_if_b_no and --th_a_if_b_yes must be supplied together"
+        )
+    for name in ("th_a", "th_b", "th_a_if_b_no", "th_a_if_b_yes"):
+        value = getattr(args, name)
+        if value is not None and not 0.0 <= value <= 1.0:
+            raise ValueError(f"--{name} must be between 0 and 1")
     adapter_flags = {
         "chinese": ("--zh_adapter", args.zh_adapter),
         "indonesian": ("--id_adapter", args.id_adapter),
