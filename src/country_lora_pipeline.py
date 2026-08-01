@@ -104,6 +104,15 @@ def build_arg_parser():
     ap.add_argument("--zh_lr", type=float, default=None)
     ap.add_argument("--id_lr", type=float, default=None)
     ap.add_argument("--si_lr", type=float, default=None)
+    ap.add_argument(
+        "--sinhala_answer_loss_weight",
+        type=float,
+        default=1.0,
+        help="loss multiplier only for token piece(s) representing the final "
+             "value after 'Answer:' in the independently trained Sinhala "
+             "adapter (default 1.0 = disabled). Chinese and Indonesian "
+             "adapters always use the standard unweighted loss.",
+    )
     ap.add_argument("--batch_size", type=int, default=2)
     ap.add_argument("--grad_accum", type=int, default=8)
     ap.add_argument("--max_len", type=int, default=1536)
@@ -135,6 +144,9 @@ def validate_args(args):
         raise ValueError("--lora_dropout must be in [0, 1)")
     if args.epochs <= 0 or args.lr <= 0:
         raise ValueError("--epochs and --lr must be positive")
+    if args.sinhala_answer_loss_weight <= 0:
+        raise ValueError(
+            "--sinhala_answer_loss_weight must be greater than zero")
     for prefix in ("zh", "id", "si"):
         epochs = getattr(args, f"{prefix}_epochs")
         learning_rate = getattr(args, f"{prefix}_lr")
@@ -353,6 +365,43 @@ def normalize_ids(ids):
     return list(ids)
 
 
+def final_answer_token_mask(tok, target_text, target_ids):
+    """Mark tokenizer pieces in the final value following ``Answer:``."""
+    match = re.search(
+        r"(?:^|\n)Answer:\s*(?P<value>[^\r\n]*?\S)\s*\Z",
+        target_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        raise ValueError(
+            "answer-token weighting requires the assistant response to end "
+            "with a line such as 'Answer: Yes'")
+    try:
+        encoded = tok(
+            target_text,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+        )
+        offsets = encoded["offset_mapping"]
+        offset_ids = encoded["input_ids"]
+    except (KeyError, TypeError, NotImplementedError) as exc:
+        raise ValueError(
+            "--sinhala_answer_loss_weight requires a fast tokenizer that "
+            "supports return_offsets_mapping") from exc
+    if offset_ids != target_ids or len(offsets) != len(target_ids):
+        raise RuntimeError(
+            "token IDs from offset mapping do not match target tokenization")
+    value_start, value_end = match.span("value")
+    mask = [
+        start < value_end and end > value_start
+        for start, end in offsets
+    ]
+    if not any(mask):
+        raise RuntimeError(
+            "the final answer value did not overlap any tokenizer token")
+    return mask
+
+
 def template_prompt_ids(tok, processor, messages):
     kwargs = {"add_generation_prompt": True, "tokenize": True,
               "return_tensors": None}
@@ -375,7 +424,7 @@ def template_prompt_ids(tok, processor, messages):
         "neither tokenizer nor processor could render the chat template")
 
 
-def encode_rows(tok, processor, rows, max_len):
+def encode_rows(tok, processor, rows, max_len, answer_loss_weight=1.0):
     features = []
     skipped = []
     eos_id = tok.eos_token_id
@@ -385,18 +434,32 @@ def encode_rows(tok, processor, rows, max_len):
     for row in rows:
         messages = row["messages"]
         prompt_ids = template_prompt_ids(tok, processor, messages[:-1])
-        target_ids = list(tok.encode(
-            messages[-1]["content"], add_special_tokens=False))
+        target_text = messages[-1]["content"]
+        target_ids = list(tok.encode(target_text, add_special_tokens=False))
+        if answer_loss_weight != 1.0:
+            answer_mask = final_answer_token_mask(
+                tok, target_text, target_ids)
+        else:
+            answer_mask = [False] * len(target_ids)
         target_ids.append(eos_id)
+        answer_mask.append(False)
         input_ids = prompt_ids + target_ids
         if len(input_ids) > max_len:
             skipped.append(row.get("uid"))
             continue
-        features.append({
+        feature = {
             "input_ids": input_ids,
             "labels": [-100] * len(prompt_ids) + target_ids,
             "uid": row.get("uid"),
-        })
+        }
+        if answer_loss_weight != 1.0:
+            feature["token_loss_weights"] = (
+                [1.0] * len(prompt_ids) + [
+                    answer_loss_weight if is_answer else 1.0
+                    for is_answer in answer_mask
+                ]
+            )
+        features.append(feature)
     return features, skipped
 
 
@@ -408,7 +471,14 @@ class PadCollator:
         import torch
 
         max_len = max(len(x["input_ids"]) for x in features)
+        weighted = "token_loss_weights" in features[0]
+        if any(("token_loss_weights" in feature) != weighted
+               for feature in features):
+            raise ValueError(
+                "a batch cannot mix weighted and unweighted features")
         batch = {"input_ids": [], "labels": [], "attention_mask": []}
+        if weighted:
+            batch["token_loss_weights"] = []
         for feature in features:
             size = len(feature["input_ids"])
             padding = max_len - size
@@ -417,8 +487,49 @@ class PadCollator:
             batch["labels"].append(
                 feature["labels"] + [-100] * padding)
             batch["attention_mask"].append([1] * size + [0] * padding)
-        return {key: torch.tensor(value, dtype=torch.long)
-                for key, value in batch.items()}
+            if weighted:
+                batch["token_loss_weights"].append(
+                    feature["token_loss_weights"] + [1.0] * padding)
+        tensors = {
+            "input_ids": torch.tensor(batch["input_ids"], dtype=torch.long),
+            "labels": torch.tensor(batch["labels"], dtype=torch.long),
+            "attention_mask": torch.tensor(
+                batch["attention_mask"], dtype=torch.long),
+        }
+        if weighted:
+            tensors["token_loss_weights"] = torch.tensor(
+                batch["token_loss_weights"], dtype=torch.float32)
+        return tensors
+
+
+def make_token_weighted_trainer_class(trainer_base):
+    """Create a Trainer that applies supplied per-token training weights."""
+    class TokenWeightedTrainer(trainer_base):
+        def compute_loss(self, model, inputs, return_outputs=False,
+                         num_items_in_batch=None):
+            import torch.nn.functional as functional
+
+            token_loss_weights = inputs.pop("token_loss_weights")
+            labels = inputs.pop("labels")
+            outputs = model(**inputs)
+            shift_logits = outputs.logits[:, :-1, :].contiguous()
+            shift_labels = labels[:, 1:].contiguous()
+            shift_weights = token_loss_weights[:, 1:].contiguous()
+            batch_size, sequence_length = shift_labels.shape
+            token_losses = functional.cross_entropy(
+                shift_logits.reshape(-1, shift_logits.size(-1)),
+                shift_labels.reshape(-1),
+                ignore_index=-100,
+                reduction="none",
+            ).reshape(batch_size, sequence_length)
+            supervised = shift_labels.ne(-100)
+            weights = shift_weights.to(
+                device=token_losses.device, dtype=token_losses.dtype)
+            loss = (token_losses * supervised * weights).sum()
+            loss = loss / supervised.sum().clamp_min(1)
+            return (loss, outputs) if return_outputs else loss
+
+    return TokenWeightedTrainer
 
 
 def newest_checkpoint(output_dir):
@@ -491,6 +602,8 @@ def run_train(args):
                       prepare_model_for_kbit_training)
     from transformers import Trainer, TrainingArguments
 
+    TokenWeightedTrainer = make_token_weighted_trainer_class(Trainer)
+
     has_cuda = torch.cuda.is_available()
     use_bf16 = bool(has_cuda and torch.cuda.is_bf16_supported())
     compute_dtype = (torch.bfloat16 if use_bf16 else
@@ -554,6 +667,7 @@ def run_train(args):
         "max_len": args.max_len,
         "selected_countries": [dataset for dataset, _, _ in selected_countries],
         "si_mode": args.si_mode,
+        "sinhala_answer_loss_weight": args.sinhala_answer_loss_weight,
         "oversample_si_3x": args.oversample_si_3x,
         "oversample_si_negation_3x": args.oversample_si_negation_3x,
         "si_negation_data": (
@@ -577,9 +691,18 @@ def run_train(args):
 
         epochs = country_setting(args, prefix, "epochs")
         learning_rate = country_setting(args, prefix, "lr")
+        answer_loss_weight = (
+            args.sinhala_answer_loss_weight
+            if dataset == "sri_lankan" else 1.0
+        )
         rows = loaded_rows[dataset]
         base_features, skipped = encode_rows(
-            tokenizer, processor, rows, args.max_len)
+            tokenizer,
+            processor,
+            rows,
+            args.max_len,
+            answer_loss_weight=answer_loss_weight,
+        )
         if not base_features:
             raise RuntimeError(
                 f"{dataset}: every example exceeded --max_len {args.max_len}")
@@ -609,6 +732,12 @@ def run_train(args):
             row_note = f"{len(features)} encoded"
         print(f"[{dataset}] {row_note} / {len(skipped)} skipped; "
               f"epochs={epochs}, lr={learning_rate}")
+        if answer_loss_weight != 1.0:
+            print(
+                "[sri_lankan] training loss mode: final Answer value "
+                f"token(s)={answer_loss_weight}; all other tokens=1.0")
+        else:
+            print(f"[{dataset}] training loss mode: standard unweighted loss")
 
         peft_config = LoraConfig(
             r=args.lora_r,
@@ -642,7 +771,11 @@ def run_train(args):
             report_to="none",
             remove_unused_columns=False,
         )
-        trainer = Trainer(
+        trainer_class = (
+            TokenWeightedTrainer
+            if answer_loss_weight != 1.0 else Trainer
+        )
+        trainer = trainer_class(
             model=model,
             args=train_args,
             train_dataset=dataset_obj,
@@ -676,6 +809,11 @@ def run_train(args):
             "skipped_uids": skipped,
             "epochs": epochs,
             "learning_rate": learning_rate,
+            "answer_loss_weight": answer_loss_weight,
+            "loss_mode": (
+                "final_answer_value_tokens"
+                if answer_loss_weight != 1.0 else "standard_unweighted"
+            ),
             "lora_r": args.lora_r,
             "lora_alpha": args.lora_alpha,
             "lora_dropout": args.lora_dropout,
