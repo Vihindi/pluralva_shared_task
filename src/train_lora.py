@@ -33,6 +33,7 @@ training uses the default row-level shuffle.
 """
 import argparse
 import json
+import re
 from pathlib import Path
 
 import torch
@@ -183,7 +184,7 @@ class EpochLossCallback(TrainerCallback):
 
 
 class DatasetWeightedTrainer(Trainer):
-    """Weight Sinhala assistant-token loss during training only.
+    """Apply per-token Sinhala loss weights during training only.
 
     The loss is recomputed without reduction so each row's weight applies to
     all and only its supervised assistant tokens. Held-out evaluation remains
@@ -192,12 +193,13 @@ class DatasetWeightedTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False,
                      num_items_in_batch=None):
-        loss_weights = inputs.pop("loss_weight")
+        token_loss_weights = inputs.pop("token_loss_weights")
         labels = inputs.pop("labels")
         outputs = model(**inputs)
 
         shift_logits = outputs.logits[:, :-1, :].contiguous()
         shift_labels = labels[:, 1:].contiguous()
+        shift_weights = token_loss_weights[:, 1:].contiguous()
         batch_size, sequence_length = shift_labels.shape
         token_losses = F.cross_entropy(
             shift_logits.reshape(-1, shift_logits.size(-1)),
@@ -210,13 +212,10 @@ class DatasetWeightedTrainer(Trainer):
         # Do not weight validation loss: it should retain its usual meaning
         # and remain comparable across folds and older runs.
         if model.training:
-            weights = loss_weights.to(token_losses.device).unsqueeze(1)
+            weights = shift_weights.to(
+                device=token_losses.device, dtype=token_losses.dtype)
         else:
-            weights = torch.ones(
-                (batch_size, 1),
-                dtype=token_losses.dtype,
-                device=token_losses.device,
-            )
+            weights = torch.ones_like(token_losses)
         loss = (token_losses * supervised * weights).sum()
         loss = loss / supervised.sum().clamp_min(1)
         return (loss, outputs) if return_outputs else loss
@@ -241,17 +240,71 @@ def template_ids(tok, messages):
     return list(ids)
 
 
-def encode_example(tok, messages, max_len):
+def final_answer_token_mask(tok, target_text, target_ids):
+    """Boolean mask for token pieces in the final value after ``Answer:``."""
+    match = re.search(
+        r"(?:^|\n)Answer:\s*(?P<value>[^\r\n]*?\S)\s*\Z",
+        target_text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        raise ValueError(
+            "answer-token weighting requires the assistant response to end "
+            "with a line such as 'Answer: Yes'"
+        )
+    try:
+        encoded = tok(
+            target_text,
+            add_special_tokens=False,
+            return_offsets_mapping=True,
+        )
+        offsets = encoded["offset_mapping"]
+        offset_ids = encoded["input_ids"]
+    except (KeyError, TypeError, NotImplementedError) as exc:
+        raise ValueError(
+            "--sinhala_answer_loss_weight requires a fast tokenizer that "
+            "supports return_offsets_mapping"
+        ) from exc
+    if offset_ids != target_ids or len(offsets) != len(target_ids):
+        raise RuntimeError(
+            "token IDs from offset mapping do not match target tokenization"
+        )
+    value_start, value_end = match.span("value")
+    mask = [
+        start < value_end and end > value_start
+        for start, end in offsets
+    ]
+    if not any(mask):
+        raise RuntimeError(
+            "the final answer value did not overlap any tokenizer token"
+        )
+    return mask
+
+
+def encode_example(tok, messages, max_len, mark_answer_tokens=False):
     """-> {input_ids, labels} with prompt masked, or None if too long."""
     assert messages[-1]["role"] == "assistant", "last message must be assistant"
     prompt_ids = template_ids(tok, messages[:-1])
-    target_ids = tok.encode(messages[-1]["content"], add_special_tokens=False)
+    target_text = messages[-1]["content"]
+    target_ids = tok.encode(target_text, add_special_tokens=False)
+    if mark_answer_tokens:
+        target_answer_mask = final_answer_token_mask(
+            tok, target_text, target_ids)
+    else:
+        target_answer_mask = [False] * len(target_ids)
     target_ids.append(tok.eos_token_id)
+    target_answer_mask.append(False)  # EOS is not part of the answer value.
     input_ids = prompt_ids + target_ids
     if len(input_ids) > max_len:
         return None
     labels = [-100] * len(prompt_ids) + target_ids
-    return {"input_ids": input_ids, "labels": labels}
+    return {
+        "input_ids": input_ids,
+        "labels": labels,
+        "answer_token_mask": (
+            [False] * len(prompt_ids) + target_answer_mask
+        ),
+    }
 
 
 class MixedCountryDataset(torch.utils.data.IterableDataset):
@@ -288,21 +341,22 @@ class PadCollator:
     def __call__(self, feats):
         maxlen = max(len(f["input_ids"]) for f in feats)
         batch = {"input_ids": [], "labels": [], "attention_mask": [],
-                 "loss_weight": []}
+                 "token_loss_weights": []}
         for f in feats:
             n = len(f["input_ids"])
             pad = maxlen - n
             batch["input_ids"].append(list(f["input_ids"]) + [self.pad_id] * pad)
             batch["labels"].append(list(f["labels"]) + [-100] * pad)
             batch["attention_mask"].append([1] * n + [0] * pad)
-            batch["loss_weight"].append(f.get("loss_weight", 1.0))
+            batch["token_loss_weights"].append(
+                list(f["token_loss_weights"]) + [1.0] * pad)
         return {
             "input_ids": torch.tensor(batch["input_ids"], dtype=torch.long),
             "labels": torch.tensor(batch["labels"], dtype=torch.long),
             "attention_mask": torch.tensor(
                 batch["attention_mask"], dtype=torch.long),
-            "loss_weight": torch.tensor(
-                batch["loss_weight"], dtype=torch.float32),
+            "token_loss_weights": torch.tensor(
+                batch["token_loss_weights"], dtype=torch.float32),
         }
 
 
@@ -332,6 +386,16 @@ def main():
              "sri_lankan rows (default 1.0 = disabled; use 1.5 for the "
              "proposed joint-training weighting). Chinese and Indonesian "
              "always remain at 1.0.",
+    )
+    ap.add_argument(
+        "--sinhala_answer_loss_weight",
+        type=float,
+        default=1.0,
+        help="training-loss multiplier only for token piece(s) representing "
+             "the final value after 'Answer:' in sri_lankan rows (default "
+             "1.0 = disabled; recommended 1.5). All other assistant tokens "
+             "remain at 1.0. Cannot be combined with a non-default "
+             "--sinhala_loss_weight.",
     )
     ap.add_argument("--warmup_ratio", type=float, default=0.05,
                     help="fraction of total steps spent ramping the LR from 0 "
@@ -409,6 +473,14 @@ def main():
 
     if args.sinhala_loss_weight <= 0:
         raise ValueError("--sinhala_loss_weight must be greater than zero")
+    if args.sinhala_answer_loss_weight <= 0:
+        raise ValueError(
+            "--sinhala_answer_loss_weight must be greater than zero")
+    if (args.sinhala_loss_weight != 1.0 and
+            args.sinhala_answer_loss_weight != 1.0):
+        raise ValueError(
+            "choose either whole-response --sinhala_loss_weight or "
+            "--sinhala_answer_loss_weight, not both")
 
     if args.init_adapter and args.resume:
         raise ValueError(
@@ -440,11 +512,16 @@ def main():
 
     rows = load_examples(args.train_files)
     datasets_present = {row["dataset"] for row in rows}
-    if args.sinhala_loss_weight != 1.0:
+    weighting_enabled = (
+        args.sinhala_loss_weight != 1.0 or
+        args.sinhala_answer_loss_weight != 1.0
+    )
+    if weighting_enabled:
         if "sri_lankan" not in datasets_present:
-            print("WARNING: --sinhala_loss_weight has no effect because no "
+            print("WARNING: Sinhala loss weighting has no effect because no "
                   "sri_lankan rows were supplied")
-        elif datasets_present == {"sri_lankan"}:
+        elif (datasets_present == {"sri_lankan"} and
+              args.sinhala_loss_weight != 1.0):
             print("WARNING: all rows are Sinhala, so weighting every loss by "
                   f"{args.sinhala_loss_weight} changes the overall gradient "
                   "scale rather than its share relative to other countries")
@@ -504,10 +581,31 @@ def main():
     def encode_all(rws):
         feats, skipped = [], 0
         for r in rws:
-            enc = encode_example(tok, r["messages"], args.max_len)
+            use_answer_weight = (
+                r["dataset"] == "sri_lankan" and
+                args.sinhala_answer_loss_weight != 1.0
+            )
+            enc = encode_example(
+                tok,
+                r["messages"],
+                args.max_len,
+                mark_answer_tokens=use_answer_weight,
+            )
             if enc is None:
                 skipped += 1
             else:
+                token_loss_weights = [1.0] * len(enc["labels"])
+                if r["dataset"] == "sri_lankan":
+                    if args.sinhala_loss_weight != 1.0:
+                        token_loss_weights = [
+                            args.sinhala_loss_weight if label != -100 else 1.0
+                            for label in enc["labels"]
+                        ]
+                    elif args.sinhala_answer_loss_weight != 1.0:
+                        token_loss_weights = [
+                            args.sinhala_answer_loss_weight if is_answer else 1.0
+                            for is_answer in enc["answer_token_mask"]
+                        ]
                 enc.update({
                     "uid": r["uid"],
                     "dataset": r["dataset"],
@@ -515,19 +613,23 @@ def main():
                     "augmentation_source": r.get(
                         "augmentation_source", "primary"),
                     "permutation_order": r.get("permutation_order"),
-                    "loss_weight": (
-                        args.sinhala_loss_weight
-                        if r["dataset"] == "sri_lankan" else 1.0
-                    ),
+                    "token_loss_weights": token_loss_weights,
                 })
+                enc.pop("answer_token_mask")
                 feats.append(enc)
         return feats, skipped
 
     feats, skipped = encode_all(rows)
     print(f"{len(feats)} training examples from {len(args.train_files)} file(s)"
           f" ({skipped} skipped as longer than {args.max_len} tokens)")
-    print("training loss weights: Chinese=1.0, Indonesian=1.0, "
-          f"Sinhala={args.sinhala_loss_weight}")
+    if args.sinhala_answer_loss_weight != 1.0:
+        print("training loss mode: Sinhala final answer value token(s)="
+              f"{args.sinhala_answer_loss_weight}; every other token=1.0")
+    elif args.sinhala_loss_weight != 1.0:
+        print("training loss mode: every supervised Sinhala token="
+              f"{args.sinhala_loss_weight}; Chinese/Indonesian=1.0")
+    else:
+        print("training loss mode: standard unweighted loss (all tokens=1.0)")
     if eval_rows:
         print("held-out evaluation loss is unweighted for comparability")
     if args.oversample_si_negation_3x:
@@ -759,11 +861,20 @@ def main():
             "training_rows": len(feats),
             "epochs": args.epochs,
             "learning_rate": args.lr,
-            "loss_function": "dataset_weighted_assistant_token_cross_entropy",
+            "loss_function": "token_weighted_assistant_cross_entropy",
+            "sinhala_loss_mode": (
+                "answer_value_tokens"
+                if args.sinhala_answer_loss_weight != 1.0 else
+                "whole_assistant_response"
+                if args.sinhala_loss_weight != 1.0 else
+                "disabled"
+            ),
             "dataset_loss_weights": {
                 "chinese": 1.0,
                 "indonesian": 1.0,
-                "sri_lankan": args.sinhala_loss_weight,
+                "sri_lankan_whole_response": args.sinhala_loss_weight,
+                "sri_lankan_answer_value":
+                    args.sinhala_answer_loss_weight,
             },
             "evaluation_loss_weighted": False,
             "warmup_ratio": args.warmup_ratio,
