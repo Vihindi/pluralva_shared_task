@@ -36,6 +36,7 @@ import json
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from datasets import Dataset
 from peft import LoraConfig, PeftConfig, PeftModel, get_peft_model
 from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer,
@@ -181,6 +182,46 @@ class EpochLossCallback(TrainerCallback):
         return control
 
 
+class DatasetWeightedTrainer(Trainer):
+    """Weight Sinhala assistant-token loss during training only.
+
+    The loss is recomputed without reduction so each row's weight applies to
+    all and only its supervised assistant tokens. Held-out evaluation remains
+    ordinary, unweighted cross-entropy so CV losses stay comparable.
+    """
+
+    def compute_loss(self, model, inputs, return_outputs=False,
+                     num_items_in_batch=None):
+        loss_weights = inputs.pop("loss_weight")
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+
+        shift_logits = outputs.logits[:, :-1, :].contiguous()
+        shift_labels = labels[:, 1:].contiguous()
+        batch_size, sequence_length = shift_labels.shape
+        token_losses = F.cross_entropy(
+            shift_logits.reshape(-1, shift_logits.size(-1)),
+            shift_labels.reshape(-1),
+            ignore_index=-100,
+            reduction="none",
+        ).reshape(batch_size, sequence_length)
+        supervised = shift_labels.ne(-100)
+
+        # Do not weight validation loss: it should retain its usual meaning
+        # and remain comparable across folds and older runs.
+        if model.training:
+            weights = loss_weights.to(token_losses.device).unsqueeze(1)
+        else:
+            weights = torch.ones(
+                (batch_size, 1),
+                dtype=token_losses.dtype,
+                device=token_losses.device,
+            )
+        loss = (token_losses * supervised * weights).sum()
+        loss = loss / supervised.sum().clamp_min(1)
+        return (loss, outputs) if return_outputs else loss
+
+
 def load_examples(paths):
     return load_schedule_rows(paths)
 
@@ -246,14 +287,23 @@ class PadCollator:
 
     def __call__(self, feats):
         maxlen = max(len(f["input_ids"]) for f in feats)
-        batch = {"input_ids": [], "labels": [], "attention_mask": []}
+        batch = {"input_ids": [], "labels": [], "attention_mask": [],
+                 "loss_weight": []}
         for f in feats:
             n = len(f["input_ids"])
             pad = maxlen - n
             batch["input_ids"].append(list(f["input_ids"]) + [self.pad_id] * pad)
             batch["labels"].append(list(f["labels"]) + [-100] * pad)
             batch["attention_mask"].append([1] * n + [0] * pad)
-        return {k: torch.tensor(v, dtype=torch.long) for k, v in batch.items()}
+            batch["loss_weight"].append(f.get("loss_weight", 1.0))
+        return {
+            "input_ids": torch.tensor(batch["input_ids"], dtype=torch.long),
+            "labels": torch.tensor(batch["labels"], dtype=torch.long),
+            "attention_mask": torch.tensor(
+                batch["attention_mask"], dtype=torch.long),
+            "loss_weight": torch.tensor(
+                batch["loss_weight"], dtype=torch.float32),
+        }
 
 
 def main():
@@ -274,6 +324,15 @@ def main():
     ap.add_argument("--lora_dropout", type=float, default=0.05)
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--lr", type=float, default=1e-4)
+    ap.add_argument(
+        "--sinhala_loss_weight",
+        type=float,
+        default=1.0,
+        help="training-loss multiplier for supervised assistant tokens in "
+             "sri_lankan rows (default 1.0 = disabled; use 1.5 for the "
+             "proposed joint-training weighting). Chinese and Indonesian "
+             "always remain at 1.0.",
+    )
     ap.add_argument("--warmup_ratio", type=float, default=0.05,
                     help="fraction of total steps spent ramping the LR from 0 "
                          "to --lr before cosine decay begins (default 0.05)")
@@ -348,6 +407,9 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
+    if args.sinhala_loss_weight <= 0:
+        raise ValueError("--sinhala_loss_weight must be greater than zero")
+
     if args.init_adapter and args.resume:
         raise ValueError(
             "--init_adapter and --resume are mutually exclusive: use "
@@ -378,6 +440,14 @@ def main():
 
     rows = load_examples(args.train_files)
     datasets_present = {row["dataset"] for row in rows}
+    if args.sinhala_loss_weight != 1.0:
+        if "sri_lankan" not in datasets_present:
+            print("WARNING: --sinhala_loss_weight has no effect because no "
+                  "sri_lankan rows were supplied")
+        elif datasets_present == {"sri_lankan"}:
+            print("WARNING: all rows are Sinhala, so weighting every loss by "
+                  f"{args.sinhala_loss_weight} changes the overall gradient "
+                  "scale rather than its share relative to other countries")
     if args.mixed_country_batches and args.no_mixed_country_batches:
         raise ValueError(
             "Choose only one of --mixed_country_batches or "
@@ -445,6 +515,10 @@ def main():
                     "augmentation_source": r.get(
                         "augmentation_source", "primary"),
                     "permutation_order": r.get("permutation_order"),
+                    "loss_weight": (
+                        args.sinhala_loss_weight
+                        if r["dataset"] == "sri_lankan" else 1.0
+                    ),
                 })
                 feats.append(enc)
         return feats, skipped
@@ -452,6 +526,10 @@ def main():
     feats, skipped = encode_all(rows)
     print(f"{len(feats)} training examples from {len(args.train_files)} file(s)"
           f" ({skipped} skipped as longer than {args.max_len} tokens)")
+    print("training loss weights: Chinese=1.0, Indonesian=1.0, "
+          f"Sinhala={args.sinhala_loss_weight}")
+    if eval_rows:
+        print("held-out evaluation loss is unweighted for comparability")
     if args.oversample_si_negation_3x:
         negation_path = Path(args.si_negation_data)
         if not negation_path.exists():
@@ -646,10 +724,11 @@ def main():
         per_device_eval_batch_size=max(2, args.batch_size),
     )
 
-    trainer = Trainer(model=model, args=train_args, train_dataset=ds,
-                      eval_dataset=eval_ds,
-                      data_collator=PadCollator(tok.pad_token_id),
-                      callbacks=[EpochLossCallback()])
+    trainer = DatasetWeightedTrainer(
+        model=model, args=train_args, train_dataset=ds,
+        eval_dataset=eval_ds,
+        data_collator=PadCollator(tok.pad_token_id),
+        callbacks=[EpochLossCallback()])
 
     # resume from the newest checkpoint-* in output_dir if asked and one exists
     resume_ckpt = None
@@ -680,6 +759,13 @@ def main():
             "training_rows": len(feats),
             "epochs": args.epochs,
             "learning_rate": args.lr,
+            "loss_function": "dataset_weighted_assistant_token_cross_entropy",
+            "dataset_loss_weights": {
+                "chinese": 1.0,
+                "indonesian": 1.0,
+                "sri_lankan": args.sinhala_loss_weight,
+            },
+            "evaluation_loss_weighted": False,
             "warmup_ratio": args.warmup_ratio,
             "batch_size": args.batch_size,
             "gradient_accumulation": args.grad_accum,
