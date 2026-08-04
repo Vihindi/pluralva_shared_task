@@ -1,9 +1,0 @@
-# GPU environment for Stage-1 and full-fine-tuning scripts
-# Local preprocessing (preprocess.py, build_sft_data.py) needs only the standard library.
-torch>=2.3
-transformers>=4.51        # Qwen3 support + enable_thinking chat-template kwarg
-peft>=0.11
-trl>=0.19                 # SFTConfig(assistant_only_loss=True)
-datasets>=2.19
-accelerate>=0.30
-bitsandbytes>=0.43        # QLoRA model loading and train_full.py's 8-bit optimizer
